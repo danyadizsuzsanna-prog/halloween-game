@@ -1,0 +1,8 @@
+node_modules
+dist
+.env
+.DS_Store
+qr-codes/
+# A helyes válaszokat tartalmazza — publikus repóba SOHA ne kerüljön fel.
+# Csak a Supabase SQL Editorba másold be.
+supabase/seed/
