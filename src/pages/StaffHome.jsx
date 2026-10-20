@@ -228,11 +228,19 @@ export default function StaffHome({ profile }) {
       >
         📺 Kivetítő megnyitása (játék indítása, rituálé)
       </button>
-      <button onClick={() => {
-          if (window.confirm('Biztosan kijelentkezel?')) supabase.auth.signOut()
-        }} className="text-ritual-gray text-xs underline">
-        Kijelentkezés
-      </button>
+      <div className="flex gap-6 text-ritual-gray text-xs">
+        <button onClick={() => navigate('/pin')} className="underline">
+          PIN módosítása
+        </button>
+        <button
+          onClick={() => {
+            if (window.confirm('Biztosan kijelentkezel?')) supabase.auth.signOut()
+          }}
+          className="underline"
+        >
+          Kijelentkezés
+        </button>
+      </div>
     </div>
   )
 }

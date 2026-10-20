@@ -325,6 +325,11 @@ export default function Lobby({ profile, refreshProfile }) {
           </button>
         )}
       </div>
+      <div className="mt-6 text-center">
+        <button onClick={() => navigate('/pin')} className="text-ritual-gray text-xs underline">
+          PIN módosítása
+        </button>
+      </div>
     </div>
   )
 }

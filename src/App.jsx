@@ -1,4 +1,5 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { useState } from 'react'
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { useSession } from './lib/useSession'
 import { supabase } from './lib/supabaseClient'
 import Login from './pages/Login.jsx'
@@ -11,6 +12,7 @@ import Scan from './pages/Scan.jsx'
 import NameScreen from './pages/NameScreen.jsx'
 import WaitingRoom from './pages/WaitingRoom.jsx'
 import StaffHome from './pages/StaffHome.jsx'
+import PinScreen from './pages/PinScreen.jsx'
 
 function LoadingScreen() {
   return (
@@ -22,8 +24,24 @@ function LoadingScreen() {
   )
 }
 
+const PIN_SKIP_KEY = 'ritual_pin_skipped'
+function readPinSkipped() {
+  try {
+    return localStorage.getItem(PIN_SKIP_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function PinChangePage() {
+  const navigate = useNavigate()
+  return <PinScreen mode="change" onDone={() => navigate('/lobby')} onSkip={() => navigate('/lobby')} />
+}
+
 export default function App() {
   const { session, profile, loading, refreshProfile } = useSession()
+  // A PIN beállítása belépés után egyszer felajánlott (kihagyható) lépés.
+  const [pinHandled, setPinHandled] = useState(readPinSkipped)
 
   if (loading) return <LoadingScreen />
 
@@ -58,6 +76,25 @@ export default function App() {
     return <NameScreen onDone={refreshProfile} />
   }
 
+  // Saját PIN: belépés után egyszer felajánljuk (kihagyható).
+  const pinSet = !!session.user?.user_metadata?.pin_set
+  if (!pinSet && !pinHandled) {
+    return (
+      <PinScreen
+        mode="setup"
+        onDone={() => setPinHandled(true)}
+        onSkip={() => {
+          try {
+            localStorage.setItem(PIN_SKIP_KEY, '1')
+          } catch {
+            /* nem baj */
+          }
+          setPinHandled(true)
+        }}
+      />
+    )
+  }
+
   // A játékoshoz kötött oldalak csak csapattal érhetők el; csapat nélkül
   // (várakozó szoba) a /lobby minden más útvonalat átvesz.
   const hasTeam = !!profile.team_id
@@ -77,6 +114,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Navigate to="/lobby" replace />} />
       <Route path="/lobby" element={home} />
+      <Route path="/pin" element={<PinChangePage />} />
       <Route path="/scan" element={gated(<Scan />)} />
       <Route path="/task/:stationId" element={gated(<Task profile={profile} />)} />
       <Route path="/inventory" element={gated(<Inventory profile={profile} />)} />

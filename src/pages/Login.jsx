@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
+import { callWithRetry, isRateLimit } from '../lib/retry'
 
 const EMAIL_KEY = 'ritual_last_email'
 const RESEND_SECONDS = 45
@@ -21,12 +22,17 @@ function saveEmail(v) {
 
 export default function Login() {
   const [email, setEmail] = useState(readSavedEmail)
-  const [status, setStatus] = useState('idle') // idle | sending | sent | code | error
+  const [status, setStatus] = useState('idle') // idle | sending | sent | pin | error
   const [errorMsg, setErrorMsg] = useState('')
   const [code, setCode] = useState('')
   const [verifying, setVerifying] = useState(false)
   const [codeError, setCodeError] = useState('')
+  const [codeDetail, setCodeDetail] = useState('')
   const [cooldown, setCooldown] = useState(0)
+  const [pin, setPin] = useState('')
+  const [pinError, setPinError] = useState('')
+  const [signing, setSigning] = useState(false)
+  const [waitSecs, setWaitSecs] = useState(0)
 
   useEffect(() => {
     if (cooldown <= 0) return undefined
@@ -39,7 +45,7 @@ export default function Login() {
     setErrorMsg('')
     setCodeError('')
 
-    const clean = email.trim()
+    const clean = email.trim().toLowerCase()
 
     // Csak az engedélyezett (céges / meghívott) címek léphetnek be.
     const { data: allowed, error: checkError } = await supabase.rpc('is_email_allowed', {
@@ -51,12 +57,16 @@ export default function Login() {
       return
     }
 
-    const { error } = await supabase.auth.signInWithOtp({
-      email: clean,
-      options: {
-        emailRedirectTo: window.location.origin + import.meta.env.BASE_URL + 'lobby'
-      }
-    })
+    const { error } = await callWithRetry(
+      () =>
+        supabase.auth.signInWithOtp({
+          email: clean,
+          options: {
+            emailRedirectTo: window.location.origin + import.meta.env.BASE_URL + 'lobby'
+          }
+        }),
+      setWaitSecs
+    )
     if (error) {
       setStatus('error')
       setErrorMsg(error.message)
@@ -73,19 +83,61 @@ export default function Login() {
     sendLink()
   }
 
+  async function handlePinLogin(e) {
+    e.preventDefault()
+    if (!/^\d{6}$/.test(pin) || !email.trim() || signing) return
+    setSigning(true)
+    setPinError('')
+    const clean = email.trim().toLowerCase()
+    const { error } = await callWithRetry(
+      () => supabase.auth.signInWithPassword({ email: clean, password: pin }),
+      setWaitSecs
+    )
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error('PIN-es belépési hiba:', error)
+      setPinError(
+        isRateLimit(error)
+          ? 'Most nagyon sokan lépnek be egyszerre. Várj egy percet, és próbáld újra!'
+          : 'Hibás email cím vagy PIN. Ha nem állítottál be PIN-t, vagy nem emlékszel rá, kérj belépőt emailben.'
+      )
+      setSigning(false)
+      return
+    }
+    saveEmail(clean)
+    // Siker esetén az onAuthStateChange átvált a játékra.
+  }
+
   async function handleVerify(e) {
     e.preventDefault()
     if (code.length < 6 || verifying || !email.trim()) return
     setVerifying(true)
     setCodeError('')
-    const clean = email.trim()
-    let { error } = await supabase.auth.verifyOtp({ email: clean, token: code, type: 'email' })
-    if (error) {
-      // Első regisztrációnál a kód "signup" típusú lehet.
-      ;({ error } = await supabase.auth.verifyOtp({ email: clean, token: code, type: 'signup' }))
+    setCodeDetail('')
+    // A Supabase az email címeket kisbetűsen tárolja.
+    const clean = email.trim().toLowerCase()
+    // A kód típusa a felhasználó állapotától függ (visszatérő belépés, első
+    // regisztráció, meghívott felhasználó) — sorban kipróbáljuk mindet.
+    let firstError = null
+    let ok = false
+    for (const type of ['email', 'signup', 'magiclink']) {
+      const { error } =
+        type === 'email'
+          ? await callWithRetry(() => supabase.auth.verifyOtp({ email: clean, token: code, type }), setWaitSecs)
+          : await supabase.auth.verifyOtp({ email: clean, token: code, type })
+      if (!error) {
+        ok = true
+        break
+      }
+      if (!firstError) firstError = error
+      // Túlterhelés esetén a többi típus próbálgatása csak rontana a helyzeten.
+      if (isRateLimit(error)) break
     }
-    if (error) {
+    if (!ok) {
+      // eslint-disable-next-line no-console
+      console.error('Kód ellenőrzési hiba:', firstError)
       setCodeError('A kód hibás vagy lejárt. Kérj új kódot, és a legfrissebb levélből másold be!')
+      setCodeDetail(`${firstError?.message ?? 'ismeretlen hiba'}${firstError?.status ? ` (${firstError.status})` : ''}`)
       setVerifying(false)
     }
     // Siker esetén az onAuthStateChange átvált a játékra.
@@ -101,40 +153,25 @@ export default function Login() {
         Lépj be a céges email címeddel. Belépés után megadod a neved, és a szervezők beosztanak a csapatodba.
       </p>
 
-      {status === 'sent' || status === 'code' ? (
+      {waitSecs > 0 && (
+        <p className="mb-6 max-w-sm text-center text-ritual-orange text-sm">
+          Most nagyon sokan lépnek be egyszerre — nem kell semmit csinálnod, magától újrapróbáljuk ({waitSecs} mp).
+        </p>
+      )}
+
+      {status === 'sent' ? (
         <div className="w-full max-w-sm flex flex-col gap-4">
-          {status === 'sent' ? (
-            <div className="bg-ritual-purpleDark border border-ritual-purple rounded-2xl p-5 text-center">
-              <p className="text-ritual-bone">
-                Elküldtük a belépőt a <span className="text-ritual-orange">{email.trim()}</span> címre.
-              </p>
-              <p className="text-ritual-gray text-sm mt-2">
-                Kattints a levélben lévő linkre — vagy, ha a link nem működik (pl. másik böngészőben nyílik meg),
-                írd be itt a levélben kapott kódot:
-              </p>
-            </div>
-          ) : (
-            <div className="bg-ritual-purpleDark border border-ritual-purple rounded-2xl p-5 text-center">
-              <p className="text-ritual-bone">Belépés kóddal</p>
-              <p className="text-ritual-gray text-sm mt-2">
-                Add meg az email címedet és a legutóbbi belépő levélben kapott kódot. A kód a levél kérésétől
-                számítva rövid ideig érvényes.
-              </p>
-            </div>
-          )}
+          <div className="bg-ritual-purpleDark border border-ritual-purple rounded-2xl p-5 text-center">
+            <p className="text-ritual-bone">
+              Elküldtük a belépőt a <span className="text-ritual-orange">{email.trim()}</span> címre.
+            </p>
+            <p className="text-ritual-gray text-sm mt-2">
+              Kattints a levélben lévő linkre — vagy, ha a link nem működik (pl. másik böngészőben nyílik meg),
+              írd be itt a levélben kapott kódot:
+            </p>
+          </div>
 
           <form onSubmit={handleVerify} className="flex flex-col gap-3">
-            {status === 'code' && (
-              <input
-                type="email"
-                required
-                autoComplete="email"
-                placeholder="nev.vezeteknev@ceg.hu"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className={inputCls}
-              />
-            )}
             <input
               type="text"
               inputMode="numeric"
@@ -153,6 +190,7 @@ export default function Login() {
               {verifying ? 'Ellenőrzés…' : 'Belépés a kóddal'}
             </button>
             {codeError && <p className="text-monster-vampire text-sm">{codeError}</p>}
+            {codeDetail && <p className="text-ritual-gray text-xs break-words">Részletek: {codeDetail}</p>}
           </form>
 
           <div className="flex flex-col items-center gap-2 text-sm">
@@ -161,11 +199,7 @@ export default function Login() {
               disabled={cooldown > 0 || !email.trim()}
               className="text-ritual-orange underline disabled:text-ritual-gray disabled:no-underline"
             >
-              {cooldown > 0
-                ? `Új belépő kérése (${cooldown} mp)`
-                : status === 'code'
-                  ? 'Nincs kódom — belépő kérése'
-                  : 'Új belépő kérése'}
+              {cooldown > 0 ? `Új belépő kérése (${cooldown} mp)` : 'Új belépő kérése'}
             </button>
             <button
               onClick={() => {
@@ -176,7 +210,60 @@ export default function Login() {
               }}
               className="text-ritual-gray underline"
             >
-              {status === 'code' ? 'Vissza' : 'Másik email cím'}
+              Másik email cím
+            </button>
+          </div>
+        </div>
+      ) : status === 'pin' ? (
+        <div className="w-full max-w-sm flex flex-col gap-4">
+          <div className="bg-ritual-purpleDark border border-ritual-purple rounded-2xl p-5 text-center">
+            <p className="text-ritual-bone">Belépés PIN-kóddal</p>
+            <p className="text-ritual-gray text-sm mt-2">
+              Add meg az email címedet és a regisztrációkor választott 6 jegyű PIN-t. Nem küldünk levelet.
+            </p>
+          </div>
+          <form onSubmit={handlePinLogin} className="flex flex-col gap-3">
+            <input
+              type="email"
+              required
+              autoComplete="email"
+              placeholder="nev.vezeteknev@ceg.hu"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className={inputCls}
+            />
+            <input
+              type="password"
+              inputMode="numeric"
+              autoComplete="current-password"
+              maxLength={6}
+              placeholder="6 jegyű PIN"
+              value={pin}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+              className={`${inputCls} text-center tracking-[0.5em] text-xl`}
+            />
+            <button
+              type="submit"
+              disabled={pin.length !== 6 || !email.trim() || signing}
+              className="rounded-xl px-4 py-3 bg-ritual-orange text-ritual-black font-semibold disabled:opacity-50"
+            >
+              {signing ? 'Belépés…' : 'Belépés'}
+            </button>
+            {pinError && <p className="text-monster-vampire text-sm">{pinError}</p>}
+          </form>
+          <div className="flex flex-col items-center gap-2 text-sm">
+            <button onClick={sendLink} disabled={!email.trim()} className="text-ritual-orange underline disabled:text-ritual-gray">
+              Elfelejtettem a PIN-t — belépő kérése emailben
+            </button>
+            <button
+              onClick={() => {
+                setStatus('idle')
+                setPin('')
+                setPinError('')
+              }}
+              className="text-ritual-gray underline"
+            >
+              Vissza
             </button>
           </div>
         </div>
@@ -201,17 +288,17 @@ export default function Login() {
           <button
             type="button"
             onClick={() => {
-              setStatus('code')
-              setCode('')
-              setCodeError('')
+              setStatus('pin')
+              setPin('')
+              setPinError('')
               setErrorMsg('')
             }}
             className="rounded-xl px-4 py-3 bg-ritual-purpleDark border border-ritual-purple text-ritual-bone"
           >
-            Már regisztráltam — belépés kóddal
+            Már regisztráltam — belépés PIN-kóddal
           </button>
           <p className="text-ritual-gray text-xs text-center">
-            Ha már regisztráltál, nem kell új meghívó: kérj új belépőt, vagy lépj be a levélben kapott kóddal.
+            Ha már regisztráltál, nem kell új meghívó: lépj be a saját PIN-kóddal, vagy kérj új belépőt.
           </p>
           {status === 'error' && <p className="text-monster-vampire text-sm">{errorMsg}</p>}
         </form>

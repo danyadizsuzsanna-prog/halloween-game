@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { imgUrl } from '../lib/images'
 
@@ -6,6 +7,7 @@ import { imgUrl } from '../lib/images'
 // A profil időnként újratöltődik, és amint csapatot kap a játékos, az App
 // automatikusan átvált a Lobbyra.
 export default function WaitingRoom({ profile, refreshProfile }) {
+  const navigate = useNavigate()
   const [room, setRoom] = useState({ count: 0, players: [] })
 
   useEffect(() => {
@@ -61,14 +63,19 @@ export default function WaitingRoom({ profile, refreshProfile }) {
         </div>
       </div>
 
-      <button
-        onClick={() => {
-          if (window.confirm('Biztosan kijelentkezel?')) supabase.auth.signOut()
-        }}
-        className="mt-10 text-ritual-gray text-xs underline"
-      >
-        Kijelentkezés
-      </button>
+      <div className="mt-10 flex gap-6 text-ritual-gray text-xs">
+        <button onClick={() => navigate('/pin')} className="underline">
+          PIN módosítása
+        </button>
+        <button
+          onClick={() => {
+            if (window.confirm('Biztosan kijelentkezel?')) supabase.auth.signOut()
+          }}
+          className="underline"
+        >
+          Kijelentkezés
+        </button>
+      </div>
     </div>
   )
 }
