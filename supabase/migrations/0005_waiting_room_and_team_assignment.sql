@@ -49,6 +49,14 @@ update profiles set is_captain = false where is_captain and team_id is null;
 create unique index if not exists one_captain_per_team
   on profiles (team_id) where is_captain;
 
+-- FONTOS: a várakozó szobában a játékosnak még nincs csapata (team_id = null),
+-- így az eddigi "own team profiles" szabály (team_id = current_team_id()) a saját
+-- profilját sem engedné olvasni ("A profilod nem tölthető be"). Ezért a saját
+-- profil mindig olvasható.
+drop policy if exists "own profile" on profiles;
+create policy "own profile" on profiles for select
+  using (id = auth.uid());
+
 -- ----------------------------------------------------------------------------
 -- 2. REGISZTRÁCIÓ: csak profilt hozunk létre, csapatot NEM adunk
 -- ----------------------------------------------------------------------------
