@@ -8,6 +8,9 @@ import Inventory from './pages/Inventory.jsx'
 import RitualSubmit from './pages/RitualSubmit.jsx'
 import Presenter from './pages/Presenter.jsx'
 import Scan from './pages/Scan.jsx'
+import NameScreen from './pages/NameScreen.jsx'
+import WaitingRoom from './pages/WaitingRoom.jsx'
+import StaffHome from './pages/StaffHome.jsx'
 
 function LoadingScreen() {
   return (
@@ -50,14 +53,34 @@ export default function App() {
     )
   }
 
+  // Első belépéskor mindenki megadja a nevét (email címet a játék sehol nem mutat).
+  if (!profile.display_name) {
+    return <NameScreen onDone={refreshProfile} />
+  }
+
+  // A játékoshoz kötött oldalak csak csapattal érhetők el; csapat nélkül
+  // (várakozó szoba) a /lobby minden más útvonalat átvesz.
+  const hasTeam = !!profile.team_id
+  const gated = (el) => (hasTeam ? el : <Navigate to="/lobby" replace />)
+
+  // /lobby: stáb → beosztás-vezérlő; csapat nélküli játékos → várakozó szoba;
+  // csapattag → a csapat lobbyja.
+  const home = profile.is_staff ? (
+    <StaffHome profile={profile} />
+  ) : hasTeam ? (
+    <Lobby profile={profile} refreshProfile={refreshProfile} />
+  ) : (
+    <WaitingRoom profile={profile} refreshProfile={refreshProfile} />
+  )
+
   return (
     <Routes>
       <Route path="/" element={<Navigate to="/lobby" replace />} />
-      <Route path="/lobby" element={<Lobby profile={profile} refreshProfile={refreshProfile} />} />
-      <Route path="/scan" element={<Scan />} />
-      <Route path="/task/:stationId" element={<Task profile={profile} />} />
-      <Route path="/inventory" element={<Inventory profile={profile} />} />
-      <Route path="/ritual" element={<RitualSubmit profile={profile} />} />
+      <Route path="/lobby" element={home} />
+      <Route path="/scan" element={gated(<Scan />)} />
+      <Route path="/task/:stationId" element={gated(<Task profile={profile} />)} />
+      <Route path="/inventory" element={gated(<Inventory profile={profile} />)} />
+      <Route path="/ritual" element={gated(<RitualSubmit profile={profile} />)} />
       {/* A stáb bejelentkezve, is_staff=true profillal éri el — ezt kézzel
           kell beállítani az adatbázisban a stáb tagjainak az esemény előtt. */}
       <Route path="/presenter" element={<Presenter profile={profile} />} />

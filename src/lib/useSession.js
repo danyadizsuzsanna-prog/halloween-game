@@ -25,7 +25,9 @@ export function useSession() {
     if (error) {
       // eslint-disable-next-line no-console
       console.error('Profil betöltési hiba:', error.message)
-      setProfile(null)
+      // Átmeneti hálózati hiba esetén (pl. a várakozó szoba időzített
+      // frissítésénél) a meglévő profilt megtartjuk, nem dobunk hibaképernyőt.
+      setProfile((prev) => (prev && prev.id === userId ? prev : null))
     } else {
       setProfile(data)
     }

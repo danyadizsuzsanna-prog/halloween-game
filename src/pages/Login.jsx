@@ -41,7 +41,7 @@ export default function Login() {
         Éjszakai Rituálé
       </h1>
       <p className="text-ritual-gray text-center mb-8 max-w-sm">
-        Lépj be a céges email címeddel — ezzel kerülsz be a csapatodba.
+        Lépj be a céges email címeddel. Belépés után megadod a neved, és a szervezők beosztanak a csapatodba.
       </p>
 
       {status === 'sent' ? (

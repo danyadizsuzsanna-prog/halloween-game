@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import IngredientIcon from '../components/IngredientIcon'
+import { randomTeamName } from '../lib/teamNames'
 
 function formatClock(ms) {
   const total = Math.max(0, Math.floor(ms / 1000))
@@ -13,6 +14,10 @@ function formatClock(ms) {
 export default function Lobby({ profile, refreshProfile }) {
   const navigate = useNavigate()
   const [teammates, setTeammates] = useState([])
+  const [team, setTeam] = useState(null)
+  const [nameInput, setNameInput] = useState('')
+  const [editingName, setEditingName] = useState(false)
+  const [savingName, setSavingName] = useState(false)
   const [config, setConfig] = useState(null)
   const [target, setTarget] = useState(null)
   const [options, setOptions] = useState([])
@@ -25,15 +30,14 @@ export default function Lobby({ profile, refreshProfile }) {
 
   const refresh = useCallback(async () => {
     if (!profile?.team_id) return
-    const [tm, cfg, tgt] = await Promise.all([
-      supabase
-        .from('profiles')
-        .select('id, display_name, email, is_captain')
-        .eq('team_id', profile.team_id),
+    const [tm, tinfo, cfg, tgt] = await Promise.all([
+      supabase.rpc('get_my_team_members'),
+      supabase.from('teams').select('id, name, name_chosen').eq('id', profile.team_id).single(),
       supabase.from('game_config').select('*').single(),
       supabase.rpc('get_current_target')
     ])
     setTeammates(tm.data ?? [])
+    if (tinfo.data) setTeam(tinfo.data)
     setConfig(cfg.data ?? null)
     const current = (tgt.data ?? [])[0] ?? null
     setTarget(current)
@@ -67,6 +71,19 @@ export default function Lobby({ profile, refreshProfile }) {
     setClaiming(false)
   }
 
+  async function handleSaveName(e) {
+    e.preventDefault()
+    const v = nameInput.replace(/\s+/g, ' ').trim()
+    if (v.length < 2 || savingName) return
+    setSavingName(true)
+    setError('')
+    const { error: err } = await supabase.rpc('set_team_name', { p_name: v })
+    if (err) setError(err.message)
+    else setEditingName(false)
+    await refresh()
+    setSavingName(false)
+  }
+
   async function handleChoose(stationId) {
     setChoosing(true)
     setError('')
@@ -77,6 +94,8 @@ export default function Lobby({ profile, refreshProfile }) {
   }
 
   const hasCaptain = teammates.some((t) => t.is_captain)
+  const nameMissing = hasCaptain && team && !team.name_chosen
+  const showNameForm = isCaptain && (nameMissing || editingName)
   const now = Date.now()
   const started = !!config?.starts_at
   const gatherEnd = config?.ends_at ? new Date(config.ends_at).getTime() : null
@@ -85,7 +104,21 @@ export default function Lobby({ profile, refreshProfile }) {
 
   return (
     <div className="min-h-screen bg-ritual-black px-5 py-6 safe-top safe-bottom">
-      <h1 className="font-display text-2xl text-ritual-orange mb-1">A csapatod</h1>
+      <h1 className="font-display text-2xl text-ritual-orange mb-1">
+        {team?.name_chosen ? team.name : 'A csapatod'}
+        {isCaptain && team?.name_chosen && !editingName && (
+          <button
+            onClick={() => {
+              setNameInput(team.name)
+              setEditingName(true)
+            }}
+            className="ml-2 text-ritual-gray text-sm align-middle"
+            title="Csapatnév módosítása"
+          >
+            ✎
+          </button>
+        )}
+      </h1>
       <p className="text-ritual-gray text-sm mb-4">{teammates.length} fő a csapatban</p>
 
       <ul className="space-y-2 mb-5">
@@ -94,7 +127,10 @@ export default function Lobby({ profile, refreshProfile }) {
             key={t.id}
             className="flex items-center justify-between bg-ritual-purpleDark rounded-xl px-4 py-3"
           >
-            <span>{t.display_name || t.email}</span>
+            <span>
+              {t.display_name}
+              {t.is_me && <span className="ml-2 text-ritual-gray text-xs">(te)</span>}
+            </span>
             {t.is_captain && (
               <span className="text-ritual-orange text-xs font-semibold uppercase tracking-wide">
                 👑 Kapitány
@@ -112,6 +148,64 @@ export default function Lobby({ profile, refreshProfile }) {
         >
           {claiming ? 'Foglalás…' : '👑 Legyek én a kapitány'}
         </button>
+      )}
+
+      {/* Csapatnév: a kapitány adja meg, a többiek várnak */}
+      {showNameForm && (
+        <form
+          onSubmit={handleSaveName}
+          className="bg-ritual-purpleDark border border-ritual-orange rounded-xl p-4 mb-5"
+        >
+          <p className="font-display text-lg text-ritual-orange mb-1">
+            {editingName ? 'Csapatnév módosítása' : 'Adjatok nevet a csapatotoknak!'}
+          </p>
+          <p className="text-ritual-gray text-sm mb-3">
+            Beszéljétek meg együtt — ez a név jelenik meg a nagy kivetítőn is.
+          </p>
+          <div className="flex gap-2 mb-3">
+            <input
+              type="text"
+              maxLength={30}
+              autoFocus
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value)}
+              placeholder="Csapatnév"
+              className="flex-1 min-w-0 rounded-xl px-4 py-3 bg-ritual-black border border-ritual-purple text-ritual-bone placeholder:text-ritual-gray focus:outline-none focus:border-ritual-orange"
+            />
+            <button
+              type="button"
+              onClick={() => setNameInput(randomTeamName(nameInput))}
+              className="rounded-xl px-3 bg-ritual-black border border-ritual-purple text-xl"
+              title="Véletlen név"
+            >
+              🎲
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={savingName || nameInput.trim().length < 2}
+              className="flex-1 rounded-xl px-4 py-3 bg-ritual-orange text-ritual-black font-semibold disabled:opacity-50"
+            >
+              {savingName ? 'Mentés…' : 'Ez lesz a nevünk'}
+            </button>
+            {editingName && (
+              <button
+                type="button"
+                onClick={() => setEditingName(false)}
+                className="rounded-xl px-4 py-3 bg-ritual-black border border-ritual-purple text-ritual-bone"
+              >
+                Mégse
+              </button>
+            )}
+          </div>
+        </form>
+      )}
+
+      {nameMissing && !isCaptain && (
+        <div className="bg-ritual-purpleDark border border-ritual-purple rounded-xl p-4 mb-5 text-center text-ritual-gray">
+          A kapitány éppen csapatnevet választ — szóljatok neki, ha van ötletetek!
+        </div>
       )}
 
       {error && <p className="text-monster-vampire text-sm mb-4">{error}</p>}
