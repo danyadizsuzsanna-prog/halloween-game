@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
+import IngredientIcon, { INGREDIENTS } from '../components/IngredientIcon'
+import { Cauldron } from '../components/RitualStage'
 
 function formatClock(ms) {
   const total = Math.max(0, Math.floor(ms / 1000))
@@ -78,9 +80,45 @@ export default function RitualSubmit({ profile }) {
   }
 
   if (submitted) {
+    // A beküldött hozzávalók lassan keringenek az üst körül — a csapat látja,
+    // hogy elment a rituálé, de az eredményről még semmit nem tud.
+    const sent = INGREDIENTS.filter((ing) => Object.values(grouped).some((g) => g.name === ing.name))
     return (
-      <div className="min-h-screen grid place-items-center bg-ritual-black px-6 text-center">
+      <div className="min-h-screen grid place-items-center bg-ritual-black px-6 text-center safe-top safe-bottom">
         <div>
+          <div className="relative mx-auto mb-8" style={{ width: 'min(72vw, 280px)', height: 'min(72vw, 280px)' }}>
+            <div
+              className="absolute inset-[-20%] rounded-full pointer-events-none"
+              style={{ background: 'radial-gradient(circle, rgba(122,63,181,.35) 0%, transparent 65%)' }}
+            />
+            <div className="absolute inset-0 rs-ring-spin">
+              {sent.map((ing) => {
+                const slot = INGREDIENTS.findIndex((x) => x.slug === ing.slug)
+                const a = ((-90 + slot * 60) * Math.PI) / 180
+                return (
+                  <div
+                    key={ing.slug}
+                    className="absolute"
+                    style={{
+                      left: `${50 + 38 * Math.cos(a)}%`,
+                      top: `${50 + 38 * Math.sin(a)}%`,
+                      width: '22%',
+                      height: '22%',
+                      marginLeft: '-11%',
+                      marginTop: '-11%'
+                    }}
+                  >
+                    <div className="rs-ring-counter w-full h-full">
+                      <IngredientIcon slug={ing.slug} size="100%" />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="absolute" style={{ left: '50%', top: '50%', width: '40%', height: '46%', marginLeft: '-20%', marginTop: '-23%' }}>
+              <Cauldron brew="#4b3470" phase="pour" glow={false} />
+            </div>
+          </div>
           <p className="font-display text-2xl text-ritual-orange mb-3">A rituálé elindult…</p>
           <p className="text-ritual-gray">Nézzétek a nagy kivetítőt — hamarosan sorra kerültök!</p>
         </div>
@@ -108,7 +146,10 @@ export default function RitualSubmit({ profile }) {
       <div className="space-y-4 mb-8">
         {Object.entries(grouped).map(([ingredientId, group]) => (
           <div key={ingredientId} className="bg-ritual-purpleDark rounded-xl p-4">
-            <p className="font-semibold text-ritual-bone mb-2">{group.name}</p>
+            <div className="flex items-center gap-3 mb-2">
+              <IngredientIcon name={group.name} size={40} />
+              <p className="font-semibold text-ritual-bone">{group.name}</p>
+            </div>
             {group.options.length === 1 ? (
               <p className="text-ritual-gray text-sm">Egy példányotok van — ez kerül be.</p>
             ) : (

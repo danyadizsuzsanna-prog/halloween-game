@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
+import IngredientIcon from '../components/IngredientIcon'
 
 const ALL_INGREDIENTS = [
   'Boszorkánygyökér',
@@ -27,7 +28,10 @@ export default function Inventory() {
 
   return (
     <div className="min-h-screen bg-ritual-black px-5 py-6 safe-top safe-bottom">
-      <h1 className="font-display text-2xl text-ritual-orange mb-6">Alapanyagok</h1>
+      <h1 className="font-display text-2xl text-ritual-orange mb-1">Alapanyagok</h1>
+      <p className="text-ritual-gray text-sm mb-6">
+        {owned.size} / {ALL_INGREDIENTS.length} megszerezve
+      </p>
 
       <div className="grid grid-cols-2 gap-3">
         {ALL_INGREDIENTS.map((name) => {
@@ -41,8 +45,10 @@ export default function Inventory() {
                   : 'bg-transparent border-ritual-purple text-ritual-gray'
               }`}
             >
-              <div className="text-2xl mb-1">{has ? '🧪' : '❔'}</div>
-              <div className="text-sm">{name}</div>
+              <div className="flex justify-center mb-2">
+                <IngredientIcon name={name} size={64} locked={!has} />
+              </div>
+              <div className="text-sm">{has ? name : '???'}</div>
             </div>
           )
         })}

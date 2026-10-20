@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
+import IngredientIcon from '../components/IngredientIcon'
 
 function formatClock(ms) {
   const total = Math.max(0, Math.floor(ms / 1000))
@@ -172,12 +173,15 @@ export default function Lobby({ profile, refreshProfile }) {
                 onClick={() => handleChoose(opt.station_id)}
                 className="w-full text-left rounded-xl px-4 py-4 bg-ritual-purpleDark border border-ritual-purple hover:border-ritual-orange transition disabled:opacity-50"
               >
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-ritual-bone">
-                    {opt.ingredient_name}
-                    {opt.is_backup && (
-                      <span className="ml-2 text-xs text-ritual-orange">(utolsó esély)</span>
-                    )}
+                <div className="flex items-center justify-between gap-3">
+                  <span className="flex items-center gap-3 font-semibold text-ritual-bone">
+                    <IngredientIcon name={opt.ingredient_name} size={40} />
+                    <span>
+                      {opt.ingredient_name}
+                      {opt.is_backup && (
+                        <span className="ml-2 text-xs text-ritual-orange">(utolsó esély)</span>
+                      )}
+                    </span>
                   </span>
                   {opt.is_busy ? (
                     <span className="text-xs text-monster-vampire">
