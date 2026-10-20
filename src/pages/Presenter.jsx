@@ -10,28 +10,26 @@ const MONSTER_LABEL = {
 export default function Presenter({ profile }) {
   const [submissions, setSubmissions] = useState([])
   const [index, setIndex] = useState(0)
-  const [durationMinutes, setDurationMinutes] = useState(45)
+  const [gatherMinutes, setGatherMinutes] = useState(40)
   const [showLeaderboard, setShowLeaderboard] = useState(false)
+  const [config, setConfig] = useState(null)
 
   useEffect(() => {
     if (!profile?.is_staff) return
     async function load() {
-      const { data } = await supabase
-        .from('ritual_submissions')
-        .select('*, teams(name)')
-        .order('submitted_at', { ascending: true })
-      setSubmissions(data ?? [])
+      const [{ data: subs }, { data: cfg }] = await Promise.all([
+        supabase
+          .from('ritual_submissions')
+          .select('*, teams(name)')
+          .order('submitted_at', { ascending: true }),
+        supabase.from('game_config').select('*').single()
+      ])
+      setSubmissions(subs ?? [])
+      setConfig(cfg)
     }
     load()
-    const channel = supabase
-      .channel('presenter-updates')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'ritual_submissions' },
-        load
-      )
-      .subscribe()
-    return () => supabase.removeChannel(channel)
+    const id = setInterval(load, 5000)
+    return () => clearInterval(id)
   }, [profile?.is_staff])
 
   if (!profile?.is_staff) {
@@ -43,6 +41,7 @@ export default function Presenter({ profile }) {
   }
 
   const current = submissions[index]
+  const running = !!config?.starts_at
 
   const leaderboard = [...submissions]
     .filter((s) => s.is_complete && !s.final_monster)
@@ -50,8 +49,18 @@ export default function Presenter({ profile }) {
     .slice(0, 3)
 
   async function handleStart() {
-    await supabase.rpc('start_game', { p_duration_minutes: durationMinutes })
-    alert('A játék elindult!')
+    if (!confirm(`Elindítod a játékot? (${gatherMinutes} perc gyűjtés + 5 perc rituálé)`)) return
+    const { error } = await supabase.rpc('start_game', {
+      p_gather_minutes: gatherMinutes,
+      p_ritual_minutes: 5
+    })
+    alert(error ? error.message : 'A játék elindult!')
+  }
+
+  async function handleReset() {
+    if (!confirm('BIZTOSAN törlöd az összes játékállást (feladatok, alapanyagok, rituálék)?')) return
+    const { error } = await supabase.rpc('reset_game')
+    alert(error ? error.message : 'Visszaállítva.')
   }
 
   if (showLeaderboard) {
@@ -83,40 +92,42 @@ export default function Presenter({ profile }) {
     <div className="min-h-screen bg-ritual-black flex flex-col items-center justify-center px-10 text-center safe-top safe-bottom">
       {!current ? (
         <>
-          <p className="text-ritual-gray mb-6">Még nincs beküldött rituálé.</p>
-          <div className="flex items-center gap-3">
+          <p className="text-ritual-gray mb-6">
+            {running ? 'A játék fut — még nincs beküldött rituálé.' : 'A játék még nem indult el.'}
+          </p>
+          <div className="flex items-center gap-3 mb-6">
             <input
               type="number"
-              value={durationMinutes}
-              onChange={(e) => setDurationMinutes(Number(e.target.value))}
+              value={gatherMinutes}
+              onChange={(e) => setGatherMinutes(Number(e.target.value))}
               className="w-20 rounded-lg px-3 py-2 bg-ritual-purpleDark border border-ritual-purple text-ritual-bone text-center"
             />
             <button
               onClick={handleStart}
               className="rounded-xl px-5 py-3 bg-ritual-orange text-ritual-black font-semibold"
             >
-              Játék indítása ({durationMinutes} perc)
+              Játék indítása ({gatherMinutes} perc + 5 perc rituálé)
             </button>
           </div>
+          <button
+            onClick={handleReset}
+            className="rounded-xl px-4 py-2 bg-transparent border border-ritual-red text-ritual-red text-sm"
+          >
+            Játékállás törlése (főpróba után)
+          </button>
         </>
       ) : (
         <>
-          <p className="font-display text-3xl text-ritual-bone mb-4">
-            {current.teams.name}
-          </p>
+          <p className="font-display text-3xl text-ritual-bone mb-4">{current.teams.name}</p>
           {!current.is_complete ? (
-            <p className="font-display text-4xl text-ritual-gray">
-              Ez most sajnos nem sikerült
-            </p>
+            <p className="font-display text-4xl text-ritual-gray">Ez most sajnos nem sikerült</p>
           ) : current.final_monster ? (
             <p className={`font-display text-4xl ${MONSTER_LABEL[current.final_monster].color}`}>
               {MONSTER_LABEL[current.final_monster].text}
             </p>
           ) : (
             <div>
-              <p className="font-display text-4xl text-ritual-orange mb-2">
-                Sikeres rituálé! ✨
-              </p>
+              <p className="font-display text-4xl text-ritual-orange mb-2">Sikeres rituálé! ✨</p>
               <p className="text-ritual-gray">
                 Frissesség-pontszám: {Number(current.freshness_score ?? 0).toFixed(2)}
               </p>

@@ -54,7 +54,7 @@ begin
 
   return new;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer set search_path = public;
 
 create trigger on_auth_user_created
   after insert on auth.users
@@ -72,7 +72,7 @@ begin
   update profiles set is_captain = true
   where id = auth.uid() and team_id = p_team_id;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer set search_path = public;
 
 -- Egy sorban tárolt globális esemény-időzítés (gyűjtögető fázis vége).
 -- Az admin (staff) állítja be az esemény napján, indításkor.
@@ -97,7 +97,7 @@ begin
   set starts_at = now(), ends_at = now() + (p_duration_minutes || ' minutes')::interval
   where id = true;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer set search_path = public;
 
 -- ----------------------------------------------------------------------------
 -- 2. ALAPANYAGOK, ÁLLOMÁSOK, FELADATOK
@@ -206,7 +206,7 @@ begin
   values (v_team_id, p_station_id, now())
   on conflict (team_id, station_id) do nothing;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer set search_path = public;
 
 create or replace function submit_answer(p_station_id uuid, p_option_id uuid)
 returns attempt_result as $$
@@ -273,7 +273,7 @@ begin
 
   return v_result;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer set search_path = public;
 
 -- ----------------------------------------------------------------------------
 -- 5. ÚTVONAL-AJÁNLÓ (torlódás-elosztás)
@@ -331,7 +331,7 @@ begin
   order by (o.station_id is not null) asc, random()
   limit 2;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer set search_path = public;
 
 -- ----------------------------------------------------------------------------
 -- 6. RITUÁLÉ BEKÜLDÉSE (csak kapitány, csak időn belül)
@@ -394,7 +394,7 @@ begin
 
   return v_submission_id;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer set search_path = public;
 
 -- ----------------------------------------------------------------------------
 -- 7. ROW LEVEL SECURITY
@@ -410,12 +410,12 @@ $$ language plpgsql security definer;
 create or replace function current_team_id()
 returns uuid as $$
   select team_id from profiles where id = auth.uid();
-$$ language sql security definer stable;
+$$ language sql security definer stable set search_path = public;
 
 create or replace function is_current_user_staff()
 returns boolean as $$
   select coalesce(is_staff, false) from profiles where id = auth.uid();
-$$ language sql security definer stable;
+$$ language sql security definer stable set search_path = public;
 
 alter table profiles enable row level security;
 alter table teams enable row level security;

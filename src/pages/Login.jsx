@@ -10,6 +10,17 @@ export default function Login() {
     e.preventDefault()
     setStatus('sending')
     setErrorMsg('')
+
+    // Csak az engedélyezett (céges / meghívott) címek léphetnek be.
+    const { data: allowed, error: checkError } = await supabase.rpc('is_email_allowed', {
+      p_email: email
+    })
+    if (checkError || !allowed) {
+      setStatus('error')
+      setErrorMsg('Ezzel az email címmel nem lehet belépni. Használd a céges címedet!')
+      return
+    }
+
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {

@@ -11,23 +11,19 @@ const ALL_INGREDIENTS = [
   'Hollókönny'
 ]
 
-export default function Inventory({ profile }) {
+export default function Inventory() {
   const navigate = useNavigate()
   const [owned, setOwned] = useState(new Set())
 
   useEffect(() => {
     async function load() {
-      // Csak a "van-e" infó jelenik meg — az állapot (friss/romló/tiszta/
-      // fertőzött) SOSE látszik itt, a rejtély a rituáléig megmarad.
-      const { data } = await supabase
-        .from('team_inventory')
-        .select('ingredients(name)')
-        .eq('team_id', profile.team_id)
-      const names = new Set((data ?? []).map((row) => row.ingredients.name))
-      setOwned(names)
+      // Csak a "van-e" infó jelenik meg — az állapot (tiszta/fertőzött,
+      // friss/romló) a szerver oldalon marad, a rejtély a rituáléig megmarad.
+      const { data } = await supabase.rpc('get_my_inventory')
+      setOwned(new Set((data ?? []).map((row) => row.ingredient_name)))
     }
     load()
-  }, [profile.team_id])
+  }, [])
 
   return (
     <div className="min-h-screen bg-ritual-black px-5 py-6 safe-top safe-bottom">

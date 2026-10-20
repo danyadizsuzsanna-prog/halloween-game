@@ -1,9 +1,11 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 
-// Fisher-Yates — a válaszopciók sorrendje mindig véletlenszerű, hogy ne
-// lehessen a betűjel alapján tippelni.
+const LIMIT_MS = 5 * 60 * 1000
+
+// Fisher-Yates — a válaszopciók sorrendje véletlenszerű, hogy ne lehessen
+// a betűjel alapján tippelni.
 function shuffle(array) {
   const a = [...array]
   for (let i = a.length - 1; i > 0; i--) {
@@ -13,65 +15,100 @@ function shuffle(array) {
   return a
 }
 
+function formatClock(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000))
+  const m = String(Math.floor(total / 60)).padStart(2, '0')
+  const s = String(total % 60).padStart(2, '0')
+  return `${m}:${s}`
+}
+
 export default function Task({ profile }) {
   const { stationId } = useParams()
   const navigate = useNavigate()
   const [task, setTask] = useState(null)
   const [options, setOptions] = useState([])
-  const [myFragment, setMyFragment] = useState(null)
+  const [deadline, setDeadline] = useState(null) // szerver-időben, ms
+  const [offset, setOffset] = useState(0) // szerver - kliens óra eltérése, ms
+  const [left, setLeft] = useState(null)
   const [submitting, setSubmitting] = useState(false)
-  const [result, setResult] = useState(null)
+  const [failed, setFailed] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     async function load() {
-      // Az óra itt indul el — a task megnyitásakor, NEM a beküldéskor.
-      // Bármelyik csapattag hívhatja, aki elsőnek nyitja meg a feladatot.
-      await supabase.rpc('start_attempt', { p_station_id: stationId })
-
-      const { data: taskData } = await supabase
-        .from('public_tasks')
-        .select('*')
-        .eq('station_id', stationId)
-        .single()
-      setTask(taskData)
-
-      const { data: optionData } = await supabase
-        .from('public_answer_options')
-        .select('*')
-        .eq('task_id', taskData.id)
-      setOptions(shuffle(optionData ?? []))
-
-      const { data: teammates } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('team_id', profile.team_id)
-        .order('id', { ascending: true })
-
-      const myIndex = teammates.findIndex((t) => t.id === profile.id)
-      const fragments = taskData.fragments ?? []
-      setMyFragment(fragments[myIndex % fragments.length] ?? fragments[0])
+      const { data, error: err } = await supabase.rpc('get_task_for_me', {
+        p_station_id: stationId
+      })
+      if (err || !data?.[0]) {
+        setError(err?.message || 'A feladat nem érhető el.')
+        return
+      }
+      const row = data[0]
+      setTask(row)
+      setOptions(shuffle(row.options ?? []))
+      setOffset(new Date(row.server_now).getTime() - Date.now())
+      setDeadline(new Date(row.started_at).getTime() + LIMIT_MS)
     }
     load()
-  }, [stationId, profile.id, profile.team_id])
+  }, [stationId])
 
-  const isCaptain = profile.is_captain
+  useEffect(() => {
+    if (!deadline) return
+    const id = setInterval(() => setLeft(deadline - (Date.now() + offset)), 500)
+    return () => clearInterval(id)
+  }, [deadline, offset])
+
+  const expired = left !== null && left <= 0
+  const isCaptain = !!profile?.is_captain
 
   async function handleSubmit(optionId) {
     setSubmitting(true)
-    const { data, error } = await supabase.rpc('submit_answer', {
+    setError('')
+    const { data, error: err } = await supabase.rpc('submit_answer', {
       p_station_id: stationId,
       p_option_id: optionId
     })
     setSubmitting(false)
-    if (error) {
-      alert(error.message)
+    if (err) {
+      setError(err.message)
       return
     }
-    if (data === 'failed') {
-      setResult('failed')
-    } else {
-      navigate('/lobby')
-    }
+    if (data === 'failed') setFailed(true)
+    else navigate('/lobby', { replace: true })
+  }
+
+  if (error && !task) {
+    return (
+      <div className="min-h-screen grid place-items-center bg-ritual-black px-6 text-center">
+        <div>
+          <p className="text-ritual-bone mb-4">{error}</p>
+          <button
+            onClick={() => navigate('/lobby')}
+            className="rounded-xl px-4 py-3 bg-ritual-purpleDark border border-ritual-purple text-ritual-bone"
+          >
+            Vissza
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (failed || expired) {
+    return (
+      <div className="min-h-screen grid place-items-center bg-ritual-black px-6 text-center">
+        <div>
+          <p className="font-display text-2xl text-monster-vampire mb-4">
+            Ez most sajnos nem sikerült
+          </p>
+          <button
+            onClick={() => navigate('/lobby', { replace: true })}
+            className="rounded-xl px-4 py-3 bg-ritual-purpleDark border border-ritual-purple text-ritual-bone"
+          >
+            Tovább
+          </button>
+        </div>
+      </div>
+    )
   }
 
   if (!task) {
@@ -82,33 +119,22 @@ export default function Task({ profile }) {
     )
   }
 
-  if (result === 'failed') {
-    return (
-      <div className="min-h-screen grid place-items-center bg-ritual-black px-6 text-center">
-        <p className="font-display text-2xl text-monster-vampire mb-3">
-          Ez most sajnos nem sikerült
-        </p>
-        <button
-          onClick={() => navigate('/lobby')}
-          className="rounded-xl px-4 py-3 bg-ritual-purpleDark border border-ritual-purple text-ritual-bone"
-        >
-          Vissza a térképhez
-        </button>
-      </div>
-    )
-  }
-
   return (
     <div className="min-h-screen bg-ritual-black px-5 py-6 safe-top safe-bottom">
-      <p className="text-ritual-gray text-sm mb-2">Feladat</p>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-ritual-gray text-sm">Feladat</p>
+        {left !== null && (
+          <p className="text-ritual-orange font-semibold tabular-nums">{formatClock(left)}</p>
+        )}
+      </div>
       <h1 className="font-display text-xl text-ritual-bone mb-5">{task.prompt}</h1>
 
-      {myFragment && (
+      {task.my_fragment && (
         <div className="bg-ritual-purple/30 border border-ritual-orange rounded-xl p-4 mb-6">
           <p className="text-xs uppercase tracking-wide text-ritual-orange mb-1">
-            Ez csak a Tiéd — {myFragment.role}
+            Ez csak a Tiéd
           </p>
-          <p className="text-ritual-bone">{myFragment.text}</p>
+          <p className="text-ritual-bone">{task.my_fragment.text}</p>
         </div>
       )}
 
@@ -132,6 +158,7 @@ export default function Task({ profile }) {
         ))}
       </div>
 
+      {error && <p className="text-monster-vampire text-sm mt-4">{error}</p>}
       {!isCaptain && (
         <p className="text-center text-ritual-gray text-xs mt-4">
           Csak a kapitány küldheti be a választ.

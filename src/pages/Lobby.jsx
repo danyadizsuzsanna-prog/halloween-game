@@ -2,82 +2,92 @@ import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 
-export default function Lobby({ profile }) {
+function formatClock(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000))
+  const m = String(Math.floor(total / 60)).padStart(2, '0')
+  const s = String(total % 60).padStart(2, '0')
+  return `${m}:${s}`
+}
+
+export default function Lobby({ profile, refreshProfile }) {
   const navigate = useNavigate()
   const [teammates, setTeammates] = useState([])
   const [config, setConfig] = useState(null)
+  const [target, setTarget] = useState(null)
   const [options, setOptions] = useState([])
-  const [loadingOptions, setLoadingOptions] = useState(false)
   const [claiming, setClaiming] = useState(false)
+  const [choosing, setChoosing] = useState(false)
+  const [error, setError] = useState('')
+  const [, setTick] = useState(0)
 
-  const loadTeammates = useCallback(async () => {
+  const isCaptain = !!profile?.is_captain
+
+  const refresh = useCallback(async () => {
     if (!profile?.team_id) return
-    const { data } = await supabase
-      .from('profiles')
-      .select('id, display_name, email, is_captain')
-      .eq('team_id', profile.team_id)
-    setTeammates(data ?? [])
-  }, [profile?.team_id])
+    const [tm, cfg, tgt] = await Promise.all([
+      supabase
+        .from('profiles')
+        .select('id, display_name, email, is_captain')
+        .eq('team_id', profile.team_id),
+      supabase.from('game_config').select('*').single(),
+      supabase.rpc('get_current_target')
+    ])
+    setTeammates(tm.data ?? [])
+    setConfig(cfg.data ?? null)
+    const current = (tgt.data ?? [])[0] ?? null
+    setTarget(current)
 
-  const loadConfig = useCallback(async () => {
-    const { data } = await supabase.from('game_config').select('*').single()
-    setConfig(data)
-  }, [])
-
-  const loadOptions = useCallback(async () => {
-    if (!config?.ends_at) return
-    setLoadingOptions(true)
-    const { data, error } = await supabase.rpc('get_routing_options', {
-      p_game_ends_at: config.ends_at
-    })
-    if (!error) setOptions(data ?? [])
-    setLoadingOptions(false)
-  }, [config?.ends_at])
-
-  useEffect(() => {
-    loadTeammates()
-    loadConfig()
-    // élő frissítés: ha bárki a csapatból elindul egy feladatra, vagy a
-    // kapitányt megválasztják, mindenki lássa
-    const channel = supabase
-      .channel('lobby-updates')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'profiles' },
-        loadTeammates
-      )
-      .subscribe()
-    return () => supabase.removeChannel(channel)
-  }, [loadTeammates, loadConfig])
+    const running = cfg.data?.starts_at && new Date(cfg.data.ends_at) > new Date()
+    if (!current && running && isCaptain) {
+      const { data } = await supabase.rpc('get_routing_options')
+      setOptions(data ?? [])
+    } else {
+      setOptions([])
+    }
+  }, [profile?.team_id, isCaptain])
 
   useEffect(() => {
-    loadOptions()
-  }, [loadOptions])
+    refresh()
+    const poll = setInterval(refresh, 4000)
+    const clock = setInterval(() => setTick((t) => t + 1), 1000)
+    return () => {
+      clearInterval(poll)
+      clearInterval(clock)
+    }
+  }, [refresh])
 
   async function handleClaimCaptain() {
     setClaiming(true)
-    const { error } = await supabase.rpc('claim_captain', { p_team_id: profile.team_id })
-    if (error) alert(error.message)
-    await loadTeammates()
+    setError('')
+    const { error: err } = await supabase.rpc('claim_captain', { p_team_id: profile.team_id })
+    if (err) setError(err.message)
+    await refreshProfile()
+    await refresh()
     setClaiming(false)
   }
 
-  const hasCaptain = teammates.some((t) => t.is_captain)
-  const isMeCaptain = teammates.find((t) => t.id === profile?.id)?.is_captain
+  async function handleChoose(stationId) {
+    setChoosing(true)
+    setError('')
+    const { error: err } = await supabase.rpc('choose_station', { p_station_id: stationId })
+    if (err) setError(err.message)
+    await refresh()
+    setChoosing(false)
+  }
 
-  const gameNotStarted = !config?.starts_at
-  const gameOver = config?.ends_at && new Date(config.ends_at) < new Date()
+  const hasCaptain = teammates.some((t) => t.is_captain)
+  const now = Date.now()
+  const started = !!config?.starts_at
+  const gatherEnd = config?.ends_at ? new Date(config.ends_at).getTime() : null
+  const gathering = started && gatherEnd && now <= gatherEnd
+  const ritualEnd = config?.ritual_deadline ? new Date(config.ritual_deadline).getTime() : null
 
   return (
     <div className="min-h-screen bg-ritual-black px-5 py-6 safe-top safe-bottom">
-      <h1 className="font-display text-2xl text-ritual-orange mb-1">
-        {teammates.length > 0 ? 'A csapatod' : 'Csapat betöltése…'}
-      </h1>
-      <p className="text-ritual-gray text-sm mb-6">
-        {teammates.length} fő a csapatban
-      </p>
+      <h1 className="font-display text-2xl text-ritual-orange mb-1">A csapatod</h1>
+      <p className="text-ritual-gray text-sm mb-4">{teammates.length} fő a csapatban</p>
 
-      <ul className="space-y-2 mb-6">
+      <ul className="space-y-2 mb-5">
         {teammates.map((t) => (
           <li
             key={t.id}
@@ -97,39 +107,81 @@ export default function Lobby({ profile }) {
         <button
           onClick={handleClaimCaptain}
           disabled={claiming}
-          className="w-full rounded-xl px-4 py-3 mb-6 bg-ritual-orange text-ritual-black font-semibold disabled:opacity-50"
+          className="w-full rounded-xl px-4 py-3 mb-5 bg-ritual-orange text-ritual-black font-semibold disabled:opacity-50"
         >
           {claiming ? 'Foglalás…' : '👑 Legyek én a kapitány'}
         </button>
       )}
 
-      {gameNotStarted && (
+      {error && <p className="text-monster-vampire text-sm mb-4">{error}</p>}
+
+      {!started && (
         <div className="bg-ritual-purpleDark border border-ritual-purple rounded-xl p-4 text-center text-ritual-gray">
           A stáb még nem indította el a játékot — kérlek várj a jelre!
         </div>
       )}
 
-      {!gameNotStarted && !gameOver && (
+      {started && gathering && (
+        <p className="text-center text-ritual-gray text-sm mb-4">
+          Hátralévő gyűjtögető idő:{' '}
+          <span className="text-ritual-bone font-semibold">{formatClock(gatherEnd - now)}</span>
+        </p>
+      )}
+
+      {/* 1) Van aktív cél: helyszín + QR-beolvasás, vagy futó feladat */}
+      {target && !target.started_at && (
+        <div className="bg-ritual-purpleDark border border-ritual-orange rounded-xl p-5 text-center">
+          <p className="text-ritual-gray text-sm mb-1">Menjetek ide:</p>
+          <p className="font-display text-3xl text-ritual-orange mb-3">{target.room_name}</p>
+          <p className="text-ritual-bone text-sm mb-4">
+            Ott olvassátok be a kihelyezett QR-kódot — a feladat és az óra akkor indul el.
+          </p>
+          <button
+            onClick={() => navigate('/scan')}
+            className="w-full rounded-xl px-4 py-3 bg-ritual-orange text-ritual-black font-semibold"
+          >
+            📷 QR-kód beolvasása
+          </button>
+        </div>
+      )}
+
+      {target && target.started_at && (
+        <div className="bg-ritual-purpleDark border border-ritual-orange rounded-xl p-5 text-center">
+          <p className="text-ritual-bone mb-4">A feladatotok éppen fut!</p>
+          <button
+            onClick={() => navigate(`/task/${target.station_id}`)}
+            className="w-full rounded-xl px-4 py-3 bg-ritual-orange text-ritual-black font-semibold"
+          >
+            Vissza a feladathoz
+          </button>
+        </div>
+      )}
+
+      {/* 2) Nincs aktív cél: a kapitány választ, a többiek várnak */}
+      {!target && gathering && isCaptain && (
         <>
           <h2 className="font-display text-lg text-ritual-bone mb-3">Merre tovább?</h2>
-          {loadingOptions && <p className="text-ritual-gray">Betöltés…</p>}
+          {options.length === 0 && (
+            <p className="text-ritual-gray">Nincs több elérhető állomás.</p>
+          )}
           <div className="space-y-3">
             {options.map((opt) => (
               <button
                 key={opt.station_id}
-                onClick={() => navigate(`/task/${opt.station_id}`)}
-                className="w-full text-left rounded-xl px-4 py-4 bg-ritual-purpleDark border border-ritual-purple hover:border-ritual-orange transition"
+                disabled={choosing}
+                onClick={() => handleChoose(opt.station_id)}
+                className="w-full text-left rounded-xl px-4 py-4 bg-ritual-purpleDark border border-ritual-purple hover:border-ritual-orange transition disabled:opacity-50"
               >
                 <div className="flex items-center justify-between">
                   <span className="font-semibold text-ritual-bone">
                     {opt.ingredient_name}
                     {opt.is_backup && (
-                      <span className="ml-2 text-xs text-ritual-orange">(tartalék)</span>
+                      <span className="ml-2 text-xs text-ritual-orange">(utolsó esély)</span>
                     )}
                   </span>
                   {opt.is_busy ? (
                     <span className="text-xs text-monster-vampire">
-                      Foglalt (~{Math.max(0, Math.ceil((opt.busy_seconds_left ?? 0) / 60))} perc)
+                      Foglalt (~{Math.max(1, Math.ceil((opt.busy_seconds_left ?? 0) / 60))} perc)
                     </span>
                   ) : (
                     <span className="text-xs text-ritual-orange">Szabad</span>
@@ -141,9 +193,21 @@ export default function Lobby({ profile }) {
         </>
       )}
 
-      {gameOver && (
+      {!target && gathering && !isCaptain && hasCaptain && (
+        <div className="bg-ritual-purpleDark border border-ritual-purple rounded-xl p-4 text-center text-ritual-gray">
+          A kapitány éppen a következő irányt választja…
+        </div>
+      )}
+
+      {/* 3) A gyűjtögető idő lejárt */}
+      {started && !gathering && (
         <div className="bg-ritual-purpleDark border border-ritual-purple rounded-xl p-4 text-center text-ritual-bone">
           Lejárt a gyűjtögető idő. Irány a rituálé összeállítása!
+          {ritualEnd && now <= ritualEnd && (
+            <p className="text-ritual-orange mt-2">
+              Beküldési határidő: {formatClock(ritualEnd - now)}
+            </p>
+          )}
         </div>
       )}
 
@@ -154,7 +218,7 @@ export default function Lobby({ profile }) {
         >
           Alapanyagok
         </button>
-        {isMeCaptain && (
+        {isCaptain && (
           <button
             onClick={() => navigate('/ritual')}
             className="flex-1 rounded-xl px-4 py-3 bg-ritual-red text-ritual-bone font-semibold"

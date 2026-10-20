@@ -1,25 +1,63 @@
-// Helyben futtatandó (nem itt, a Claude sandboxban, mert az nem ér el
-// internetet): npm install qrcode, majd `node scripts/generate_qr_codes.mjs`
-//
-// Minden állomáshoz legyárt egy PNG QR-kódot a qr-codes/ mappába. A QR
-// tartalma maga a kód string (pl. "RITUAL-01") — ezt a telefonos app egy
-// egyszerű szöveg-összevetéssel azonosítja majd a megfelelő állomással.
-// (Élesben érdemesebb egy teljes URL-t kódolni, pl.
-// https://<domain>/task/<station_id> — cseréld le a CODES tömböt a saját
-// Supabase station id-jaidra a seed lefuttatása után.)
+// Helyben futtatandó, a projektmappában:
+//   1) Supabase SQL Editor: futtasd le ezt, és a "Download CSV" gombbal mentsd el
+//      a projektmappába stations.csv néven:
+//        select s.room_name, i.name as ingredient, s.kind, s.qr_code
+//        from stations s join ingredients i on i.id = s.ingredient_id
+//        order by s.room_name;
+//   2) npm install qrcode      (egyszer)
+//   3) node scripts/generate_qr_codes.mjs
+// Eredmény: qr-codes/print.html — nyisd meg böngészőben és nyomtasd ki.
 
 import QRCode from 'qrcode'
-import { mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 
-const CODES = [
-  'RITUAL-01', 'RITUAL-02', 'RITUAL-03', 'RITUAL-04', 'RITUAL-05', 'RITUAL-06',
-  'RITUAL-07', 'RITUAL-08', 'RITUAL-09', 'RITUAL-10', 'RITUAL-11', 'RITUAL-12',
-  'RITUAL-13', 'RITUAL-14', 'RITUAL-15', 'RITUAL-16', 'RITUAL-17', 'RITUAL-18'
-]
+function parseCsvLine(line) {
+  const out = []
+  let cur = ''
+  let quoted = false
+  for (const ch of line) {
+    if (ch === '"') quoted = !quoted
+    else if (ch === ',' && !quoted) {
+      out.push(cur)
+      cur = ''
+    } else cur += ch
+  }
+  out.push(cur)
+  return out.map((s) => s.trim())
+}
+
+const lines = readFileSync('stations.csv', 'utf-8').split(/\r?\n/).filter(Boolean)
+const header = parseCsvLine(lines.shift())
+const iRoom = header.indexOf('room_name')
+const iCode = header.indexOf('qr_code')
+if (iRoom < 0 || iCode < 0) throw new Error('A CSV-ben kell room_name és qr_code oszlop.')
+
+const cards = []
+for (const line of lines) {
+  const cols = parseCsvLine(line)
+  const room = cols[iRoom]
+  const code = cols[iCode]
+  const img = await QRCode.toDataURL(code, { width: 500, margin: 2 })
+  cards.push(`
+    <div class="card">
+      <img src="${img}" />
+      <div class="code">${code}</div>
+      <div class="room">${room}</div>
+    </div>`)
+}
 
 mkdirSync('qr-codes', { recursive: true })
-
-for (const code of CODES) {
-  await QRCode.toFile(`qr-codes/${code}.png`, code, { width: 600, margin: 2 })
-  console.log(`Kész: qr-codes/${code}.png`)
-}
+writeFileSync(
+  'qr-codes/print.html',
+  `<!doctype html><html lang="hu"><meta charset="utf-8"><title>QR-kódok</title>
+<style>
+  body { font-family: sans-serif; margin: 12mm; }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10mm; }
+  .card { border: 1px dashed #999; padding: 6mm; text-align: center; break-inside: avoid; }
+  img { width: 70mm; height: 70mm; }
+  .code { font-family: monospace; font-size: 14pt; letter-spacing: 2px; margin-top: 2mm; }
+  .room { font-size: 8pt; color: #888; margin-top: 2mm; }
+</style>
+<div class="grid">${cards.join('\n')}</div></html>`
+)
+console.log(`Kész: qr-codes/print.html (${cards.length} kód)`)

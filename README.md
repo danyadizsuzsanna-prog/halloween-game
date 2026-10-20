@@ -41,14 +41,14 @@ npm run dev
 
 ### QR-kódok legyártása
 
-```bash
-cd scripts
-npm install qrcode
-node generate_qr_codes.mjs
-```
-
-Ez legenerálja mind a 18 QR-kódot (`RITUAL-01`…`RITUAL-18`) PNG-ként,
-nyomtatásra készen. Ragaszd ki őket a lenti térkép szerint.
+A `0002` migráció kitalálhatatlan, véletlen kódokat állít be az állomásokra.
+1. Supabase SQL Editor:
+   `select s.room_name, i.name as ingredient, s.kind, s.qr_code from stations s join ingredients i on i.id = s.ingredient_id order by s.room_name;`
+   majd "Download CSV", és mentsd a projektmappába `stations.csv` néven.
+2. `npm install qrcode` (egyszer), majd `node scripts/generate_qr_codes.mjs`
+3. Nyisd meg a `qr-codes/print.html` fájlt böngészőben, és nyomtasd ki.
+   Minden lapon ott a QR, alatta a kód (kézi beírás tartaléknak) és a szoba neve
+   (a kihelyezőnek). A `stations.csv`-t és a `qr-codes` mappát ne töltsd fel GitHubra.
 
 ## Fizikai állomás-térkép (jóváhagyott)
 
@@ -133,3 +133,17 @@ kolléga belépő linkjéhez saját SMTP kell (pl. Resend, Brevo, vagy a cég sa
 levelezője): Project Settings → Authentication → SMTP Settings.
 Érdemes megfontolni a belépést 6 jegyű kóddal a link helyett, mert a céges
 levélszűrők néha "megnyitják" a linket, és a belépés lejár.
+
+## 0002 migráció — mit változtat
+
+- **QR-flow:** a kapitány választ irányt, ekkor derül ki a helyszín; a feladat
+  és az óra csak az állomás QR-kódjának beolvasása után indul (`scan_station`).
+- **Szerver-oldali tartalom-kiadás:** a feladat szövegét és a játékos SAJÁT
+  töredékét a `get_task_for_me` adja; a kliens nem olvashat közvetlenül
+  állomás-, kód-, próbálkozás- vagy inventory-táblát (fertőzöttség, frissesség).
+- **Tartalék állomások** csak az utolsó 10 percben és csak akkor jönnek, ha
+  az adott alapanyag mindkét rendes állomásán jártak és nincs meg.
+- **Email-engedélylista:** az `allowed_domains` táblába kerül a céges domain
+  (pl. `cegneve.hu`), az `allowed_emails` táblába a külsős vendégek címei.
+- **Rituálé-határidő** külön van a gyűjtögető fázis végétől (`start_game`).
+- **`reset_game()`** + a Presenter oldali gomb: főpróba után törli a játékállást.
