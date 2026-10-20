@@ -72,6 +72,34 @@ end;
 $$ language plpgsql security definer set search_path = public;
 -- (a trigger — on_auth_user_created — az 0001-ből változatlanul ezt hívja)
 
+-- Bármilyen okból hiányzó profilsor pótlása (pl. ha egy felhasználó a trigger
+-- cseréje előtt / közben jött létre): minden auth-felhasználónak legyen profilja.
+insert into profiles (id, email, team_id)
+select u.id, u.email, null
+from auth.users u
+where u.email is not null
+  and not exists (select 1 from profiles p where p.id = u.id)
+on conflict do nothing;
+
+-- Önjavító: a kliens ezt hívja, ha belépés után nem találja a saját profilsorát.
+create or replace function ensure_my_profile()
+returns void as $$
+declare
+  v_email text;
+begin
+  if auth.uid() is null then
+    raise exception 'Nem vagy bejelentkezve.';
+  end if;
+  select email into v_email from auth.users where id = auth.uid();
+  if v_email is null then
+    raise exception 'A felhasználó nem található.';
+  end if;
+  insert into profiles (id, email, team_id)
+  values (auth.uid(), v_email, null)
+  on conflict do nothing;
+end;
+$$ language plpgsql security definer set search_path = public;
+
 -- A stábtagnak nincs csapata: ha valakit stábnak jelölnek (is_staff = true),
 -- automatikusan kikerül a csapatából és nem lehet kapitány.
 create or replace function clear_team_for_staff()
@@ -463,6 +491,7 @@ $$ language plpgsql security definer set search_path = public;
 -- ----------------------------------------------------------------------------
 
 revoke execute on function
+  ensure_my_profile(),
   plan_team_count(int, int, int),
   set_my_display_name(text),
   assign_teams(boolean),
@@ -476,6 +505,7 @@ revoke execute on function
 from public, anon;
 
 grant execute on function
+  ensure_my_profile(),
   plan_team_count(int, int, int),
   set_my_display_name(text),
   assign_teams(boolean),

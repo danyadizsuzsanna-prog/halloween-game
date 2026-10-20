@@ -17,11 +17,14 @@ export function useSession() {
       setProfile(null)
       return
     }
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*, teams(*)')
-      .eq('id', userId)
-      .single()
+    const fetchProfile = () =>
+      supabase.from('profiles').select('*, teams(*)').eq('id', userId).single()
+    let { data, error } = await fetchProfile()
+    if (error || !data) {
+      // Ha a profilsor valamiért hiányzik, a szerver létrehozza, majd újrapróbáljuk.
+      await supabase.rpc('ensure_my_profile')
+      ;({ data, error } = await fetchProfile())
+    }
     if (error) {
       // eslint-disable-next-line no-console
       console.error('Profil betöltési hiba:', error.message)
