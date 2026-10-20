@@ -21,7 +21,7 @@ function saveEmail(v) {
 
 export default function Login() {
   const [email, setEmail] = useState(readSavedEmail)
-  const [status, setStatus] = useState('idle') // idle | sending | sent | error
+  const [status, setStatus] = useState('idle') // idle | sending | sent | code | error
   const [errorMsg, setErrorMsg] = useState('')
   const [code, setCode] = useState('')
   const [verifying, setVerifying] = useState(false)
@@ -75,7 +75,7 @@ export default function Login() {
 
   async function handleVerify(e) {
     e.preventDefault()
-    if (code.length < 6 || verifying) return
+    if (code.length < 6 || verifying || !email.trim()) return
     setVerifying(true)
     setCodeError('')
     const clean = email.trim()
@@ -101,19 +101,40 @@ export default function Login() {
         Lépj be a céges email címeddel. Belépés után megadod a neved, és a szervezők beosztanak a csapatodba.
       </p>
 
-      {status === 'sent' ? (
+      {status === 'sent' || status === 'code' ? (
         <div className="w-full max-w-sm flex flex-col gap-4">
-          <div className="bg-ritual-purpleDark border border-ritual-purple rounded-2xl p-5 text-center">
-            <p className="text-ritual-bone">
-              Elküldtük a belépőt a <span className="text-ritual-orange">{email.trim()}</span> címre.
-            </p>
-            <p className="text-ritual-gray text-sm mt-2">
-              Kattints a levélben lévő linkre — vagy, ha a link nem működik (pl. másik böngészőben nyílik meg),
-              írd be itt a levélben kapott kódot:
-            </p>
-          </div>
+          {status === 'sent' ? (
+            <div className="bg-ritual-purpleDark border border-ritual-purple rounded-2xl p-5 text-center">
+              <p className="text-ritual-bone">
+                Elküldtük a belépőt a <span className="text-ritual-orange">{email.trim()}</span> címre.
+              </p>
+              <p className="text-ritual-gray text-sm mt-2">
+                Kattints a levélben lévő linkre — vagy, ha a link nem működik (pl. másik böngészőben nyílik meg),
+                írd be itt a levélben kapott kódot:
+              </p>
+            </div>
+          ) : (
+            <div className="bg-ritual-purpleDark border border-ritual-purple rounded-2xl p-5 text-center">
+              <p className="text-ritual-bone">Belépés kóddal</p>
+              <p className="text-ritual-gray text-sm mt-2">
+                Add meg az email címedet és a legutóbbi belépő levélben kapott kódot. A kód a levél kérésétől
+                számítva rövid ideig érvényes.
+              </p>
+            </div>
+          )}
 
           <form onSubmit={handleVerify} className="flex flex-col gap-3">
+            {status === 'code' && (
+              <input
+                type="email"
+                required
+                autoComplete="email"
+                placeholder="nev.vezeteknev@ceg.hu"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className={inputCls}
+              />
+            )}
             <input
               type="text"
               inputMode="numeric"
@@ -126,7 +147,7 @@ export default function Login() {
             />
             <button
               type="submit"
-              disabled={code.length < 6 || verifying}
+              disabled={code.length < 6 || !email.trim() || verifying}
               className="rounded-xl px-4 py-3 bg-ritual-orange text-ritual-black font-semibold disabled:opacity-50"
             >
               {verifying ? 'Ellenőrzés…' : 'Belépés a kóddal'}
@@ -137,20 +158,25 @@ export default function Login() {
           <div className="flex flex-col items-center gap-2 text-sm">
             <button
               onClick={sendLink}
-              disabled={cooldown > 0}
+              disabled={cooldown > 0 || !email.trim()}
               className="text-ritual-orange underline disabled:text-ritual-gray disabled:no-underline"
             >
-              {cooldown > 0 ? `Új belépő kérése (${cooldown} mp)` : 'Új belépő kérése'}
+              {cooldown > 0
+                ? `Új belépő kérése (${cooldown} mp)`
+                : status === 'code'
+                  ? 'Nincs kódom — belépő kérése'
+                  : 'Új belépő kérése'}
             </button>
             <button
               onClick={() => {
                 setStatus('idle')
                 setCode('')
                 setCodeError('')
+                setErrorMsg('')
               }}
               className="text-ritual-gray underline"
             >
-              Másik email cím
+              {status === 'code' ? 'Vissza' : 'Másik email cím'}
             </button>
           </div>
         </div>
@@ -172,8 +198,20 @@ export default function Login() {
           >
             {status === 'sending' ? 'Küldés…' : 'Belépő kérése'}
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              setStatus('code')
+              setCode('')
+              setCodeError('')
+              setErrorMsg('')
+            }}
+            className="rounded-xl px-4 py-3 bg-ritual-purpleDark border border-ritual-purple text-ritual-bone"
+          >
+            Már regisztráltam — belépés kóddal
+          </button>
           <p className="text-ritual-gray text-xs text-center">
-            Ha már regisztráltál, ugyanígy lépj be újra — nem kell új meghívó.
+            Ha már regisztráltál, nem kell új meghívó: kérj új belépőt, vagy lépj be a levélben kapott kóddal.
           </p>
           {status === 'error' && <p className="text-monster-vampire text-sm">{errorMsg}</p>}
         </form>
