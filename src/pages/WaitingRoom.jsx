@@ -62,7 +62,9 @@ export default function WaitingRoom({ profile, refreshProfile }) {
       </div>
 
       <button
-        onClick={() => supabase.auth.signOut()}
+        onClick={() => {
+          if (window.confirm('Biztosan kijelentkezel?')) supabase.auth.signOut()
+        }}
         className="mt-10 text-ritual-gray text-xs underline"
       >
         Kijelentkezés

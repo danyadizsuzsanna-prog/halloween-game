@@ -56,7 +56,9 @@ export default function NameScreen({ onDone }) {
       </form>
 
       <button
-        onClick={() => supabase.auth.signOut()}
+        onClick={() => {
+          if (window.confirm('Biztosan kijelentkezel?')) supabase.auth.signOut()
+        }}
         className="mt-8 text-ritual-gray text-sm underline"
       >
         Nem én vagyok — kijelentkezés
