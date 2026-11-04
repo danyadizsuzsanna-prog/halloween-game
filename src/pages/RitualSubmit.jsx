@@ -19,10 +19,46 @@ function answerLine(opt) {
   return `${title} — ${answer}`
 }
 
+// Egy példány összefoglalója: feladat címe + beírt válasz, a kérdés lenyitható.
+function CopyInfo({ opt, open, onToggle }) {
+  return (
+    <div className="text-xs break-words">
+      <p className="opacity-90">{answerLine(opt)}</p>
+      {opt.task_prompt && (
+        <>
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation()
+              onToggle()
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.stopPropagation()
+                onToggle()
+              }
+            }}
+            className="inline-block mt-1 underline opacity-80 cursor-pointer"
+          >
+            {open ? 'Kérdés elrejtése ▴' : 'Kérdés megnézése ▾'}
+          </span>
+          {open && (
+            <p className="mt-1 whitespace-pre-line text-ritual-gray border-l-2 border-ritual-purple pl-2">
+              {opt.task_prompt}
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function RitualSubmit({ profile }) {
   const navigate = useNavigate()
   const [rows, setRows] = useState([])
   const [selected, setSelected] = useState({}) // ingredient_id -> inventory row id
+  const [openQ, setOpenQ] = useState({}) // inventory row id -> lenyitott kérdés
   const [config, setConfig] = useState(null)
   const [submitted, setSubmitted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -161,7 +197,13 @@ export default function RitualSubmit({ profile }) {
             {group.options.length === 1 ? (
               <div>
                 <p className="text-ritual-gray text-sm">Egy példányotok van — ez kerül be.</p>
-                <p className="text-ritual-gray text-xs mt-1 break-words">{answerLine(group.options[0])}</p>
+                <div className="mt-1 text-ritual-gray">
+                  <CopyInfo
+                    opt={group.options[0]}
+                    open={!!openQ[group.options[0].id]}
+                    onToggle={() => setOpenQ((o) => ({ ...o, [group.options[0].id]: !o[group.options[0].id] }))}
+                  />
+                </div>
               </div>
             ) : (
               <div className="space-y-2">
@@ -179,9 +221,13 @@ export default function RitualSubmit({ profile }) {
                       {i + 1}. példány ({opt.room_name})
                       {selected[ingredientId] === opt.id && ' ✓'}
                     </span>
-                    <span className="block text-xs opacity-80 mt-0.5 break-words">
-                      {answerLine(opt)}
-                    </span>
+                    <div className="mt-0.5">
+                      <CopyInfo
+                        opt={opt}
+                        open={!!openQ[opt.id]}
+                        onToggle={() => setOpenQ((o) => ({ ...o, [opt.id]: !o[opt.id] }))}
+                      />
+                    </div>
                   </button>
                 ))}
               </div>
