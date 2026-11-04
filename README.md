@@ -14,7 +14,7 @@ Céges csapatépítő PWA, ~45–60 fő, egyszeri esemény: **2026. november 5.*
 ## Felépítés
 - `src/` — a kliens (oldalak: `pages/`, a kivetítős jelenet: `components/RitualStage.jsx`)
 - `public/` — képek, ikonok, a feladat-videók (`feladatok/`) és a rituálé-videók (`ritual/`)
-- `supabase/migrations/` — az adatbázis-séma (0001, 0002, 0004, 0005). A feladatok **helyes válaszai és a QR-kódok** szándékosan NINCSENEK a repóban; ezeket csak a Supabase SQL Editorba kell bemásolni.
+- `supabase/migrations/` — az adatbázis-séma (0001, 0002, 0004, 0005, 0008). A feladatok **helyes válaszai és a QR-kódok** szándékosan NINCSENEK a repóban; ezeket csak a Supabase SQL Editorba kell bemásolni.
 
 ## Beállítások (egyszer, már megvannak)
 - GitHub: Settings → Pages → Source: *GitHub Actions*; Settings → Secrets and variables → Actions: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.

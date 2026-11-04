@@ -257,15 +257,25 @@ export default function Lobby({ profile, refreshProfile }) {
         <>
           <h2 className="font-display text-lg text-ritual-bone mb-3">Merre tovább?</h2>
           {options.length === 0 && (
-            <p className="text-ritual-gray">Nincs több elérhető állomás.</p>
+            <p className="text-ritual-gray">
+              Most nincs ajánlható állomás. Ha mind a 6 alapanyagotok megvan, irány a rituálé
+              összeállítása! Ha még hiányzik valamelyik, az utolsó 10 percben nyílnak a tartalék
+              állomások.
+            </p>
+          )}
+          {options.length > 0 && options.every((o) => o.is_busy) && (
+            <p className="text-ritual-gray text-sm mb-3">
+              Most minden szóba jövő helyszínen dolgozik egy másik csapat. Várjatok, amíg ez
+              felszabadul — a gomb magától élesedik.
+            </p>
           )}
           <div className="space-y-3">
             {options.map((opt) => (
               <button
                 key={opt.station_id}
-                disabled={choosing}
+                disabled={choosing || opt.is_busy}
                 onClick={() => handleChoose(opt.station_id)}
-                className="w-full text-left rounded-xl px-4 py-4 bg-ritual-purpleDark border border-ritual-purple hover:border-ritual-orange transition disabled:opacity-50"
+                className="w-full text-left rounded-xl px-4 py-4 bg-ritual-purpleDark border border-ritual-purple hover:border-ritual-orange transition disabled:opacity-50 disabled:hover:border-ritual-purple"
               >
                 <div className="flex items-center justify-between gap-3">
                   <span className="flex items-center gap-3 font-semibold text-ritual-bone">
@@ -279,7 +289,7 @@ export default function Lobby({ profile, refreshProfile }) {
                   </span>
                   {opt.is_busy ? (
                     <span className="text-xs text-monster-vampire">
-                      Foglalt (~{Math.max(1, Math.ceil((opt.busy_seconds_left ?? 0) / 60))} perc)
+                      Várakozás: legfeljebb ~{Math.max(1, Math.ceil((opt.busy_seconds_left ?? 0) / 60))} perc
                     </span>
                   ) : (
                     <span className="text-xs text-ritual-orange">Szabad</span>
