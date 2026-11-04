@@ -4,16 +4,10 @@ import { supabase } from '../lib/supabaseClient'
 
 const LIMIT_MS = 5 * 60 * 1000
 
-// Fisher-Yates — a válaszopciók sorrendje véletlenszerű, hogy ne lehessen
-// a betűjel alapján tippelni.
-function shuffle(array) {
-  const a = [...array]
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[a[i], a[j]] = [a[j], a[i]]
-  }
-  return a
-}
+// A médiafájlok (kép/hang/videó) a public mappából jönnek; a GitHub Pages
+// alkönyvtára miatt a BASE_URL-t elé kell tenni. Teljes URL-t változatlanul hagyunk.
+const mediaUrl = (u) =>
+  /^https?:\/\//.test(u) ? u : `${import.meta.env?.BASE_URL ?? '/'}${u.replace(/^\//, '')}`
 
 function formatClock(ms) {
   const total = Math.max(0, Math.floor(ms / 1000))
@@ -26,7 +20,8 @@ export default function Task({ profile }) {
   const { stationId } = useParams()
   const navigate = useNavigate()
   const [task, setTask] = useState(null)
-  const [options, setOptions] = useState([])
+  const [answers, setAnswers] = useState([''])
+  const [confirming, setConfirming] = useState(false)
   const [deadline, setDeadline] = useState(null) // szerver-időben, ms
   const [offset, setOffset] = useState(0) // szerver - kliens óra eltérése, ms
   const [left, setLeft] = useState(null)
@@ -45,7 +40,7 @@ export default function Task({ profile }) {
       }
       const row = data[0]
       setTask(row)
-      setOptions(shuffle(row.options ?? []))
+      setAnswers(Array.from({ length: row.answer_slots || 1 }, () => ''))
       setOffset(new Date(row.server_now).getTime() - Date.now())
       setDeadline(new Date(row.started_at).getTime() + LIMIT_MS)
     }
@@ -61,16 +56,20 @@ export default function Task({ profile }) {
   const expired = left !== null && left <= 0
   const isCaptain = !!profile?.is_captain
 
-  async function handleSubmit(optionId) {
+  const filled = answers.map((x) => x.trim())
+  const canSubmit = isCaptain && !submitting && filled.every((x) => x.length > 0)
+
+  async function handleSubmit() {
     setSubmitting(true)
     setError('')
     const { data, error: err } = await supabase.rpc('submit_answer', {
       p_station_id: stationId,
-      p_option_id: optionId
+      p_answers: filled
     })
     setSubmitting(false)
     if (err) {
       setError(err.message)
+      setConfirming(false)
       return
     }
     if (data === 'failed') setFailed(true)
@@ -127,36 +126,93 @@ export default function Task({ profile }) {
           <p className="text-ritual-orange font-semibold tabular-nums">{formatClock(left)}</p>
         )}
       </div>
-      <h1 className="font-display text-xl text-ritual-bone mb-5">{task.prompt}</h1>
-
-      {task.my_fragment && (
-        <div className="bg-ritual-purple/30 border border-ritual-orange rounded-xl p-4 mb-6">
-          <p className="text-xs uppercase tracking-wide text-ritual-orange mb-1">
-            Ez csak a Tiéd
-          </p>
-          <p className="text-ritual-bone">{task.my_fragment.text}</p>
-        </div>
+      {task.title && (
+        <h1 className="font-display text-xl text-ritual-orange mb-3">{task.title}</h1>
       )}
 
+      <div className="bg-ritual-purpleDark border border-ritual-purple rounded-2xl p-4 mb-5">
+        <p
+          className="text-ritual-bone text-lg leading-relaxed"
+          style={{ whiteSpace: 'pre-line' }}
+        >
+          {task.prompt}
+        </p>
+        {task.image_url && (
+          <img src={mediaUrl(task.image_url)} alt="" className="w-full rounded-xl mt-4" />
+        )}
+        {task.audio_url && (
+          <audio src={mediaUrl(task.audio_url)} controls className="w-full mt-4" />
+        )}
+        {task.video_url && (
+          <video
+            src={mediaUrl(task.video_url)}
+            controls
+            loop
+            playsInline
+            preload="auto"
+            className="w-full rounded-xl mt-4 bg-black"
+          />
+        )}
+      </div>
+
       <p className="text-ritual-gray text-sm mb-3">
-        Beszéljétek meg szóban, mit lát mindenki, majd a kapitány küldi be a választ.
+        {answers.length > 1
+          ? `Oldjátok meg együtt — a kapitány beírja mind a ${answers.length} választ.`
+          : 'Oldjátok meg együtt — a kapitány beírja a választ.'}
       </p>
 
       <div className="space-y-2">
-        {options.map((opt, i) => (
-          <button
-            key={opt.id}
-            disabled={!isCaptain || submitting}
-            onClick={() => handleSubmit(opt.id)}
-            className="w-full text-left rounded-xl px-4 py-3 bg-ritual-purpleDark border border-ritual-purple text-ritual-bone disabled:opacity-40 enabled:hover:border-ritual-orange"
-          >
-            <span className="text-ritual-orange font-semibold mr-2">
-              {String.fromCharCode(97 + i)})
-            </span>
-            {opt.label}
-          </button>
+        {answers.map((val, i) => (
+          <input
+            key={i}
+            value={val}
+            disabled={!isCaptain || submitting || confirming}
+            onChange={(e) =>
+              setAnswers((prev) => prev.map((x, j) => (j === i ? e.target.value : x)))
+            }
+            placeholder={answers.length > 1 ? `${i + 1}. válasz` : 'Válasz'}
+            autoComplete="off"
+            autoCapitalize="none"
+            className="w-full rounded-xl px-4 py-3 bg-ritual-purpleDark border border-ritual-purple text-ritual-bone placeholder:text-ritual-gray focus:outline-none focus:border-ritual-orange disabled:opacity-40"
+          />
         ))}
       </div>
+
+      {!confirming ? (
+        <button
+          disabled={!canSubmit}
+          onClick={() => setConfirming(true)}
+          className="w-full mt-4 rounded-xl px-4 py-3 bg-ritual-orange text-ritual-black font-semibold disabled:opacity-40"
+        >
+          Beküldés
+        </button>
+      ) : (
+        <div className="mt-4 rounded-xl border border-ritual-orange p-4">
+          <p className="text-ritual-bone text-sm mb-1">Biztosan ezt küldöd be?</p>
+          <p className="text-ritual-orange font-semibold mb-3 break-words">
+            {filled.join(' · ')}
+          </p>
+          <p className="text-ritual-gray text-xs mb-3">
+            Beküldés után nem lehet javítani — ellenőrizd a helyesírást!
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setConfirming(false)}
+              disabled={submitting}
+              className="flex-1 rounded-xl px-4 py-3 border border-ritual-purple text-ritual-gray"
+            >
+              Javítom
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={submitting}
+              className="flex-1 rounded-xl px-4 py-3 bg-ritual-orange text-ritual-black font-semibold disabled:opacity-50"
+            >
+              {submitting ? 'Küldés…' : 'Igen, beküldöm'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {error && <p className="text-monster-vampire text-sm mt-4">{error}</p>}
       {!isCaptain && (

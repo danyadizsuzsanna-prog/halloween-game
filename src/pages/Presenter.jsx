@@ -93,6 +93,7 @@ export default function Presenter({ profile }) {
   const [play, setPlay] = useState(false)
   const [phase, setPhase] = useState('ready')
   const [replayKey, setReplayKey] = useState(0)
+  const [skipSignal, setSkipSignal] = useState(0)
   const [view, setView] = useState('stage') // 'stage' | 'podium'
   const [adminOpen, setAdminOpen] = useState(false)
   const [gatherMinutes, setGatherMinutes] = useState(40)
@@ -136,6 +137,8 @@ export default function Presenter({ profile }) {
     if (!current) return
     if (!play) {
       setPlay(true)
+    } else if (phase === 'video') {
+      setSkipSignal((k) => k + 1) // a videó átugrása
     } else if (phase === 'reveal') {
       if (isLast) {
         setView('podium')
@@ -225,11 +228,13 @@ export default function Presenter({ profile }) {
     ? ''
     : !play
       ? '▶ Rituálé indítása'
-      : phase !== 'reveal'
-        ? '…'
-        : isLast
-          ? '🏆 Dobogó'
-          : 'Következő csapat →'
+      : phase === 'video'
+        ? '⏭ Átugrás'
+        : phase !== 'reveal'
+          ? '…'
+          : isLast
+            ? '🏆 Dobogó'
+            : 'Következő csapat →'
 
   const btn =
     'rounded-xl px-4 py-2 bg-ritual-purpleDark border border-ritual-purple text-ritual-bone disabled:opacity-30'
@@ -260,6 +265,7 @@ export default function Presenter({ profile }) {
           submission={current}
           play={play}
           onPhase={setPhase}
+          skipSignal={skipSignal}
         />
       )}
 
@@ -272,7 +278,7 @@ export default function Presenter({ profile }) {
           <button
             className="rounded-xl px-5 py-2 bg-ritual-orange text-ritual-black font-semibold disabled:opacity-40"
             onClick={primary}
-            disabled={play && phase !== 'reveal'}
+            disabled={play && phase !== 'reveal' && phase !== 'video'}
           >
             {primaryLabel}
           </button>

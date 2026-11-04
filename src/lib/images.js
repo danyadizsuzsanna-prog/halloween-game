@@ -12,6 +12,17 @@ const BASE = import.meta.env?.BASE_URL ?? '/'
 
 export const imgUrl = (name) => `${BASE}img/${IMAGE_SET}/${name}.webp`
 
+// A rituálé végkifejletének videói (public/ritual/). A kulcs a RitualStage outcomeKey-je.
+const RITUAL_VIDEOS = {
+  success: 'siker',
+  incomplete: 'nem_sikerult',
+  vampire: 'vampirok',
+  ghost: 'szellem',
+  werewolf: 'verfarkasok'
+}
+export const ritualVideoUrl = (key) =>
+  RITUAL_VIDEOS[key] ? `${BASE}ritual/${RITUAL_VIDEOS[key]}.mp4` : null
+
 // Készletenkénti elrendezés a kivetítős jelenethez (a jelenet %-ában).
 const LAYOUT = {
   illusztrativ: {

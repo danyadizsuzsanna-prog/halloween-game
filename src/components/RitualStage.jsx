@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import IngredientIcon, { INGREDIENTS } from './IngredientIcon'
 import { Vampire, Bat, Ghost, Werewolf, Seal } from './Creatures'
-import { imgUrl, LAYOUT_NOW as LAY } from '../lib/images'
+import { imgUrl, LAYOUT_NOW as LAY, ritualVideoUrl } from '../lib/images'
 
 // Egy csapat rituáléjának lejátszása a kivetítőn.
 //
 //   ready  → a hat hely a gyűrűben, az üst vár
-//   pour   → a hozzávalók sorban az üstbe hullanak
-//   flash  → villanás
+//   video  → a végkifejlet videója (public/ritual/) — ez lép a hullás+villanás helyére
+//   pour   → (tartalék, ha a videó nem tölt be) a hozzávalók sorban az üstbe hullanak
+//   flash  → (tartalék) villanás
 //   reveal → végkifejlet (siker / szörny / nem sikerült)
 //
 // A szörny neve és a siker/kudarc eredménye csak a "reveal" fázisban jelenik
@@ -219,13 +220,16 @@ function Smoke() {
   )
 }
 
-export default function RitualStage({ submission, play = false, onPhase }) {
+export default function RitualStage({ submission, play = false, onPhase, skipSignal = 0 }) {
   const [phase, setPhase] = useState('ready')
   const onPhaseRef = useRef(onPhase)
   onPhaseRef.current = onPhase
 
   const key = outcomeKey(submission)
   const out = OUTCOMES[key]
+  const videoSrc = ritualVideoUrl(key)
+  const videoRef = useRef(null)
+  const videoFailedRef = useRef(false)
 
   // Mely hozzávalók vannak a rituáléban? Ha a szerver nem adott részletet
   // (pl. a 0004 migráció még nincs lefuttatva), a teljes rituálé = mind a hat.
@@ -250,6 +254,12 @@ export default function RitualStage({ submission, play = false, onPhase }) {
 
   useEffect(() => {
     if (!play) return
+    // Ha van videó, az viszi a végkifejletig; a háttérben futó hullás-animáció
+    // a videó alatt lejátszódik (takarva), így a reveal-nél a megszokott állapot áll.
+    if (videoSrc && !videoFailedRef.current) {
+      setPhase('video')
+      return
+    }
     setPhase('pour')
     const t1 = setTimeout(() => setPhase('flash'), (landedAt + 0.5) * 1000)
     const t2 = setTimeout(() => setPhase('reveal'), (landedAt + 0.95) * 1000)
@@ -257,7 +267,43 @@ export default function RitualStage({ submission, play = false, onPhase }) {
       clearTimeout(t1)
       clearTimeout(t2)
     }
-  }, [play, landedAt])
+  }, [play, landedAt, videoSrc])
+
+  // A videó lejátszása: hanggal; ha a böngésző nem engedi, némítva; hiba/elakadás esetén tovább.
+  useEffect(() => {
+    if (phase !== 'video') return
+    const v = videoRef.current
+    const finish = () => setPhase((p) => (p === 'video' ? 'reveal' : p))
+    if (!v || videoFailedRef.current) {
+      finish()
+      return
+    }
+    v.currentTime = 0
+    const started = v.play()
+    if (started?.catch) {
+      started.catch(() => {
+        v.muted = true
+        v.play().catch(finish)
+      })
+    }
+    const stall = setTimeout(() => {
+      if (v.currentTime === 0) finish()
+    }, 6000)
+    const guard = setTimeout(finish, 20000)
+    return () => {
+      clearTimeout(stall)
+      clearTimeout(guard)
+    }
+  }, [phase])
+
+  // Átugrás: a Presenter ad jelet (stáb nyomja a gombot / Space).
+  const skipSeen = useRef(skipSignal)
+  useEffect(() => {
+    if (skipSignal !== skipSeen.current) {
+      skipSeen.current = skipSignal
+      setPhase((p) => (p === 'video' ? 'reveal' : p))
+    }
+  }, [skipSignal])
 
   const revealed = phase === 'reveal'
   const brew = revealed ? out.brew : '#4b3470'
@@ -465,6 +511,48 @@ export default function RitualStage({ submission, play = false, onPhase }) {
           </div>
         )}
       </div>
+
+      {/* végkifejlet-videó: a 'ready' alatt elő van töltve (rejtve), a 'video' fázisban teljes képernyős */}
+      {videoSrc && !revealed && (
+        <div
+          className="absolute inset-0"
+          style={{
+            zIndex: 30,
+            background: '#000',
+            opacity: phase === 'video' ? 1 : 0,
+            pointerEvents: 'none',
+            transition: 'opacity .5s'
+          }}
+        >
+          <video
+            ref={videoRef}
+            src={videoSrc}
+            preload="auto"
+            playsInline
+            onEnded={() => setPhase((p) => (p === 'video' ? 'reveal' : p))}
+            onError={() => {
+              videoFailedRef.current = true
+              setPhase((p) => (p === 'video' ? 'reveal' : p))
+            }}
+            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+          />
+          {phase === 'video' && (
+            <p
+              className="font-display text-ritual-bone text-center"
+              style={{
+                position: 'absolute',
+                top: '2.5vh',
+                left: 0,
+                right: 0,
+                fontSize: '4.2vh',
+                textShadow: '0 .3vh 1.5vh #000, 0 0 3vh #000'
+              }}
+            >
+              {submission.team_name}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* felirat */}
       <div className="mt-[1.5vh] text-center px-8 min-h-[16vh] pb-[7vh]">
