@@ -260,7 +260,7 @@ export default function Lobby({ profile, refreshProfile }) {
             <p className="text-ritual-gray">
               Most nincs ajánlható állomás. Ha mind a 6 alapanyagotok megvan, irány a rituálé
               összeállítása! Ha még hiányzik valamelyik, az utolsó 10 percben nyílnak a tartalék
-              állomások.
+              állomások, vagy várjatok, amíg egy másik csapat felszabadít egy helyszínt.
             </p>
           )}
           {options.length > 0 && options.every((o) => o.is_busy) && (

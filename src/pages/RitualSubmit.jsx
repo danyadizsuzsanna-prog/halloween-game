@@ -11,6 +11,14 @@ function formatClock(ms) {
   return `${m}:${s}`
 }
 
+// Rövid emlékeztető: melyik feladat, és mit válaszolt rá a csapat (a helyességet
+// a játék szándékosan nem árulja el).
+function answerLine(opt) {
+  const title = opt.task_title ? `${opt.task_title}` : 'Feladat'
+  const answer = opt.given_answer ? `válaszotok: ${opt.given_answer}` : 'válasz nem rögzítve'
+  return `${title} — ${answer}`
+}
+
 export default function RitualSubmit({ profile }) {
   const navigate = useNavigate()
   const [rows, setRows] = useState([])
@@ -151,20 +159,29 @@ export default function RitualSubmit({ profile }) {
               <p className="font-semibold text-ritual-bone">{group.name}</p>
             </div>
             {group.options.length === 1 ? (
-              <p className="text-ritual-gray text-sm">Egy példányotok van — ez kerül be.</p>
+              <div>
+                <p className="text-ritual-gray text-sm">Egy példányotok van — ez kerül be.</p>
+                <p className="text-ritual-gray text-xs mt-1 break-words">{answerLine(group.options[0])}</p>
+              </div>
             ) : (
-              <div className="flex gap-2">
+              <div className="space-y-2">
                 {group.options.map((opt, i) => (
                   <button
                     key={opt.id}
                     onClick={() => setSelected((s) => ({ ...s, [ingredientId]: opt.id }))}
-                    className={`flex-1 rounded-lg px-3 py-2 text-sm border ${
+                    className={`w-full text-left rounded-lg px-3 py-2 border ${
                       selected[ingredientId] === opt.id
                         ? 'border-ritual-orange text-ritual-orange'
                         : 'border-ritual-purple text-ritual-gray'
                     }`}
                   >
-                    {i + 1}. példány ({opt.room_name})
+                    <span className="block text-sm">
+                      {i + 1}. példány ({opt.room_name})
+                      {selected[ingredientId] === opt.id && ' ✓'}
+                    </span>
+                    <span className="block text-xs opacity-80 mt-0.5 break-words">
+                      {answerLine(opt)}
+                    </span>
                   </button>
                 ))}
               </div>
