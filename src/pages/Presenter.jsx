@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import RitualStage from '../components/RitualStage'
 import { useConfirm } from '../components/ConfirmProvider'
+import { rankSubmissions, formatElapsed, freshnessLabel } from '../lib/ranking'
 
 // Kivetítő-nézet (csak stáb). Billentyűk:
 //   Szóköz / Enter / →   lejátszás indítása, majd a következő csapat
@@ -11,67 +12,67 @@ import { useConfirm } from '../components/ConfirmProvider'
 //   G                    beállítások (játék indítása / törlése)
 //   F                    teljes képernyő
 
-// Döntetlennél "véletlen" sorrend, de stabil: ne ugráljon a lista frissítéskor.
-function stableRandom(id) {
-  let h = 2166136261
-  for (let i = 0; i < id.length; i++) {
-    h ^= id.charCodeAt(i)
-    h = Math.imul(h, 16777619)
-  }
-  return (h >>> 0) / 4294967295
-}
-
-function Podium({ submissions }) {
-  const ranked = useMemo(() => {
-    const list = submissions
-      .filter((s) => s.is_complete && !s.final_monster)
-      .map((s) => ({ ...s, score: Number(s.freshness_score ?? 0) }))
-      .sort((a, b) => b.score - a.score || stableRandom(a.id) - stableRandom(b.id))
-      .slice(0, 3)
-    return list.map((s, i) => ({
-      ...s,
-      rank: i + 1,
-      tied: (list[i - 1] && list[i - 1].score === s.score) || (list[i + 1] && list[i + 1].score === s.score)
-    }))
-  }, [submissions])
+function Podium({ submissions, startsAt }) {
+  const ranked = useMemo(() => rankSubmissions(submissions, startsAt).slice(0, 3), [submissions, startsAt])
 
   if (ranked.length === 0) {
     return (
       <div className="h-full grid place-items-center text-center px-10">
         <div>
-          <p className="font-display text-ritual-orange text-[6vh] mb-4">Dobogó</p>
-          <p className="text-ritual-gray text-[3vh]">Egyik csapat rituáléja sem sikerült tisztán — most nincs dobogós.</p>
+          <p className="font-display text-ritual-orange text-[6vh] mb-4">Nincs győztes</p>
+          <p className="text-ritual-gray text-[3vh]">Egyik csapat rituáléja sem sikerült tisztán.</p>
         </div>
       </div>
     )
   }
 
+  const winner = ranked[0]
   // vizuális sorrend: 2. – 1. – 3.
   const visual = [ranked[1], ranked[0], ranked[2]].filter(Boolean)
   const style = {
-    1: { h: '38vh', color: '#e8a24a', medal: '1.', delay: '2.6s' },
-    2: { h: '28vh', color: '#cfd3dc', medal: '2.', delay: '1.5s' },
-    3: { h: '20vh', color: '#c58a4d', medal: '3.', delay: '.4s' }
+    1: { h: '30vh', color: '#e8a24a', medal: '1.', delay: '2.6s' },
+    2: { h: '22vh', color: '#cfd3dc', medal: '2.', delay: '1.5s' },
+    3: { h: '15vh', color: '#c58a4d', medal: '3.', delay: '.4s' }
   }
 
   return (
     <div className="h-full flex flex-col items-center justify-center px-6">
-      <p className="font-display text-ritual-orange text-[6vh] mb-[5vh]">Dobogó</p>
+      <p className="text-ritual-bone/60" style={{ fontSize: '3vh', letterSpacing: '.3em' }}>
+        A GYŐZTES
+      </p>
+      <p
+        className="font-display text-center leading-tight rs-sub"
+        style={{
+          '--sdl': '3.4s',
+          fontSize: '9vh',
+          color: '#e8a24a',
+          textShadow: '0 0 5vh #e8a24acc, 0 .4vh 0 #000',
+          margin: '1vh 0 .5vh'
+        }}
+      >
+        {winner.team_name}
+      </p>
+      <p className="text-ritual-bone/85 rs-sub" style={{ '--sdl': '3.6s', fontSize: '3vh', marginBottom: '4vh' }}>
+        ⏱ {formatElapsed(winner.elapsed)} · {freshnessLabel(winner.stale)}
+        {winner.tied && <span className="block text-ritual-gray" style={{ fontSize: '2vh' }}>(azonos időpont — sorsolás döntött)</span>}
+      </p>
       <div className="flex items-end gap-[2vw]">
         {visual.map((s) => {
           const st = style[s.rank]
           return (
             <div key={s.id} className="flex flex-col items-center rs-sub" style={{ '--sdl': st.delay, width: '24vw' }}>
-              <p className="font-display text-ritual-bone text-[3.6vh] text-center leading-tight mb-[1.5vh] px-2">{s.team_name}</p>
-              <p className="text-[2.4vh] mb-[1.5vh]" style={{ color: st.color }}>
-                A rituálé ereje: {Math.round(s.score * 100)}%
-                {s.tied && <span className="block text-ritual-gray text-[1.8vh]">(döntetlen — sorsolás döntött)</span>}
+              <p className="font-display text-ritual-bone text-[3.4vh] text-center leading-tight mb-[1vh] px-2">{s.team_name}</p>
+              <p className="text-[2.2vh] mb-[1.2vh] text-center" style={{ color: st.color }}>
+                ⏱ {formatElapsed(s.elapsed)}
+                <span className="block text-ritual-bone/70" style={{ fontSize: '1.9vh' }}>
+                  {freshnessLabel(s.stale)}
+                </span>
               </p>
               <div
                 className="w-full rounded-t-xl grid place-items-center font-display"
                 style={{
                   height: st.h,
-                  fontSize: '9vh',
+                  fontSize: '8vh',
                   color: '#17111f',
                   background: `linear-gradient(180deg, ${st.color} 0%, ${st.color}99 100%)`
                 }}
@@ -256,7 +257,7 @@ export default function Presenter({ profile }) {
     <div className="relative h-screen overflow-hidden bg-ritual-black safe-top safe-bottom">
       {/* tartalom */}
       {view === 'podium' ? (
-        <Podium submissions={submissions} />
+        <Podium submissions={submissions} startsAt={config?.starts_at} />
       ) : !current ? (
         <div className="h-full grid place-items-center text-center px-10">
           <div>
