@@ -220,8 +220,13 @@ function Smoke() {
   )
 }
 
+// A videó előtt ennyi ideig látszik a csapat névkártyája (ms).
+const INTRO_MS = 2600
+
 export default function RitualStage({ submission, play = false, onPhase, skipSignal = 0 }) {
   const [phase, setPhase] = useState('ready')
+  const [intro, setIntro] = useState(false) // névkártya a videó előtt
+  const [introShown, setIntroShown] = useState(false) // a névkártya beúszása
   const onPhaseRef = useRef(onPhase)
   onPhaseRef.current = onPhase
 
@@ -274,28 +279,42 @@ export default function RitualStage({ submission, play = false, onPhase, skipSig
     }
   }, [play, landedAt, videoSrc])
 
-  // A videó lejátszása: hanggal; ha a böngésző nem engedi, némítva; hiba/elakadás esetén tovább.
+  // A videó lejátszása: előbb névkártya (INTRO_MS), utána hanggal indul; ha a böngésző nem
+  // engedi, némítva; hiba/elakadás esetén tovább.
   useEffect(() => {
-    if (phase !== 'video') return
+    if (phase !== 'video') {
+      setIntro(false)
+      setIntroShown(false)
+      return undefined
+    }
     const v = videoRef.current
     const finish = () => setPhase((p) => (p === 'video' ? 'reveal' : p))
     if (!v || videoFailedRef.current) {
       finish()
-      return
+      return undefined
     }
     v.currentTime = 0
-    const started = v.play()
-    if (started?.catch) {
-      started.catch(() => {
-        v.muted = true
-        v.play().catch(finish)
-      })
-    }
-    const stall = setTimeout(() => {
-      if (v.currentTime === 0) finish()
-    }, 6000)
-    const guard = setTimeout(finish, 20000)
+    setIntro(true)
+    const fadeIn = setTimeout(() => setIntroShown(true), 40)
+    let stall
+    let guard
+    const start = setTimeout(() => {
+      setIntro(false)
+      const started = v.play()
+      if (started?.catch) {
+        started.catch(() => {
+          v.muted = true
+          v.play().catch(finish)
+        })
+      }
+      stall = setTimeout(() => {
+        if (v.currentTime === 0) finish()
+      }, 6000)
+      guard = setTimeout(finish, 20000)
+    }, INTRO_MS)
     return () => {
+      clearTimeout(fadeIn)
+      clearTimeout(start)
       clearTimeout(stall)
       clearTimeout(guard)
     }
@@ -531,7 +550,9 @@ export default function RitualStage({ submission, play = false, onPhase, skipSig
         )}
       </div>
 
-      {/* végkifejlet-videó: a 'ready' alatt elő van töltve (rejtve), a 'video' fázisban teljes képernyős */}
+      {/* végkifejlet-videó: a 'ready' alatt elő van töltve (rejtve), a 'video' fázisban teljes képernyős.
+          Szándékosan NINCS rajta csapatnév, mert a videó saját feliratait takarná; a csapatnév a
+          'ready' képernyőn látszik, közvetlenül a lejátszás előtt. */}
       {videoSrc && (videoOnly || !phaseReveal) && (
         <div
           className="absolute inset-0"
@@ -553,22 +574,36 @@ export default function RitualStage({ submission, play = false, onPhase, skipSig
               videoFailedRef.current = true
               setPhase((p) => (p === 'video' ? 'reveal' : p))
             }}
-            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'contain',
+              opacity: intro ? 0 : 1,
+              transition: 'opacity .5s'
+            }}
           />
-          {showVideo && (
-            <p
-              className="font-display text-ritual-bone text-center"
-              style={{
-                position: 'absolute',
-                top: '2.5vh',
-                left: 0,
-                right: 0,
-                fontSize: '4.2vh',
-                textShadow: '0 .3vh 1.5vh #000, 0 0 3vh #000'
-              }}
+          {/* névkártya a videó előtt: a videón magán nincs csapatnév, hogy ne takarja a feliratait */}
+          {phase === 'video' && intro && (
+            <div
+              className="absolute inset-0 grid place-items-center text-center px-10"
+              style={{ opacity: introShown ? 1 : 0, transition: 'opacity .7s' }}
             >
-              {submission.team_name}
-            </p>
+              <div>
+                <p className="text-ritual-bone/60" style={{ fontSize: '3vh', letterSpacing: '.25em' }}>
+                  KÖVETKEZIK
+                </p>
+                <p
+                  className="font-display text-ritual-bone leading-tight"
+                  style={{
+                    fontSize: '10vh',
+                    marginTop: '2vh',
+                    textShadow: '0 0 4vh #d9772fcc, 0 .4vh 0 #000'
+                  }}
+                >
+                  {submission.team_name}
+                </p>
+              </div>
+            </div>
           )}
         </div>
       )}
