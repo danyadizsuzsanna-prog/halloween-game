@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
+import { useConfirm } from '../components/ConfirmProvider'
 
 // Első belépéskor minden játékos megadja a nevét — ezen látják majd a
 // csapattársai és a stáb (email címet sehol nem mutatunk).
 export default function NameScreen({ onDone }) {
+  const confirm = useConfirm()
   const [name, setName] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -56,8 +58,13 @@ export default function NameScreen({ onDone }) {
       </form>
 
       <button
-        onClick={() => {
-          if (window.confirm('Biztosan kijelentkezel?')) supabase.auth.signOut()
+        onClick={async () => {
+          const ok = await confirm({
+            title: 'Kijelentkezés',
+            message: 'Biztosan kijelentkezel?',
+            confirmText: 'Kijelentkezés'
+          })
+          if (ok) supabase.auth.signOut()
         }}
         className="mt-8 text-ritual-gray text-sm underline"
       >

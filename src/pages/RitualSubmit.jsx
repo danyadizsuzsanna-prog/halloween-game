@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import IngredientIcon, { INGREDIENTS } from '../components/IngredientIcon'
 import { Cauldron } from '../components/RitualStage'
+import { useConfirm } from '../components/ConfirmProvider'
 
 function formatClock(ms) {
   const total = Math.max(0, Math.floor(ms / 1000))
@@ -55,6 +56,7 @@ function CopyInfo({ opt, open, onToggle }) {
 }
 
 export default function RitualSubmit({ profile }) {
+  const confirm = useConfirm()
   const navigate = useNavigate()
   const [rows, setRows] = useState([])
   const [selected, setSelected] = useState({}) // ingredient_id -> inventory row id
@@ -96,7 +98,17 @@ export default function RitualSubmit({ profile }) {
   const deadline = config?.ritual_deadline ? new Date(config.ritual_deadline).getTime() : null
 
   async function handleSubmit() {
-    if (!confirm('Biztosan beküldöd a rituálét? Utána nem módosítható.')) return
+    const ok = await confirm({
+      title: 'Beküldöd a rituálét?',
+      message:
+        'Beküldés után már nem módosítható.' +
+        (missingCount > 0
+          ? `\n\nMég ${missingCount} alapanyag hiányzik, ezért hiányos rituálé lesz.`
+          : ''),
+      confirmText: 'Igen, beküldöm',
+      cancelText: 'Még átgondolom'
+    })
+    if (!ok) return
     setSubmitting(true)
     setError('')
     const { error: err } = await supabase.rpc('submit_ritual', {

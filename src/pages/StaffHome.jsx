@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
+import { useConfirm } from '../components/ConfirmProvider'
 
 function Stat({ label, value, tone = '' }) {
   return (
@@ -14,6 +15,7 @@ function Stat({ label, value, tone = '' }) {
 // Stáb kezdőlap: a várakozó szoba vezérlője. A stáb tagjai nem játszanak,
 // ezért nincs csapatuk — innen indítják a beosztást és követik a csapatokat.
 export default function StaffHome({ profile }) {
+  const confirm = useConfirm()
   const navigate = useNavigate()
   const [ov, setOv] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -46,24 +48,41 @@ export default function StaffHome({ profile }) {
     setBusy(false)
   }
 
-  function handleAssign() {
+  async function handleAssign() {
     if (!ov) return
     const p = ov.plan
     const txt =
       `${ov.named_players} játékos → ${p.teams} csapat, csapatonként ${
         p.min_size === p.max_size ? p.min_size : `${p.min_size}–${p.max_size}`
       } fő.\n\nIndulhat a beosztás?`
-    if (!window.confirm(txt)) return
+    const ok = await confirm({
+      title: 'Csapatok kialakítása',
+      message: txt,
+      confirmText: 'Indulhat'
+    })
+    if (!ok) return
     run(() => supabase.rpc('assign_teams', { p_force: false }), 'A csapatok kialakultak.')
   }
 
-  function handleReshuffle() {
-    if (!window.confirm('Újrakeverés: MINDEN csapat, kapitány és csapatnév törlődik, és új, véletlen beosztás készül. Biztos?')) return
+  async function handleReshuffle() {
+    const ok = await confirm({
+      title: 'Újrakeverés',
+      message: 'MINDEN csapat, kapitány és csapatnév törlődik, és új, véletlen beosztás készül.',
+      confirmText: 'Újrakeverem',
+      danger: true
+    })
+    if (!ok) return
     run(() => supabase.rpc('assign_teams', { p_force: true }), 'Újrakevertük a csapatokat.')
   }
 
-  function handleClear() {
-    if (!window.confirm('Beosztás törlése: mindenki visszakerül a várakozó szobába, a csapatnevek és kapitányok törlődnek. Biztos?')) return
+  async function handleClear() {
+    const ok = await confirm({
+      title: 'Beosztás törlése',
+      message: 'Mindenki visszakerül a várakozó szobába, a csapatnevek és kapitányok törlődnek.',
+      confirmText: 'Törlöm',
+      danger: true
+    })
+    if (!ok) return
     run(() => supabase.rpc('reset_team_assignment'), 'A beosztás törölve, mindenki a várakozó szobában van.')
   }
 
@@ -233,8 +252,13 @@ export default function StaffHome({ profile }) {
           PIN módosítása
         </button>
         <button
-          onClick={() => {
-            if (window.confirm('Biztosan kijelentkezel?')) supabase.auth.signOut()
+          onClick={async () => {
+            const ok = await confirm({
+              title: 'Kijelentkezés',
+              message: 'Biztosan kijelentkezel?',
+              confirmText: 'Kijelentkezés'
+            })
+            if (ok) supabase.auth.signOut()
           }}
           className="underline"
         >

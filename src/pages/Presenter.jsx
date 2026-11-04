@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import RitualStage from '../components/RitualStage'
+import { useConfirm } from '../components/ConfirmProvider'
 
 // Kivetítő-nézet (csak stáb). Billentyűk:
 //   Szóköz / Enter / →   lejátszás indítása, majd a következő csapat
@@ -86,6 +87,7 @@ function Podium({ submissions }) {
 }
 
 export default function Presenter({ profile }) {
+  const confirm = useConfirm()
   const [submissions, setSubmissions] = useState([])
   const [config, setConfig] = useState(null)
   const [detailMissing, setDetailMissing] = useState(false)
@@ -196,14 +198,25 @@ export default function Presenter({ profile }) {
   }, [isStaff, adminOpen, primary, back, replay, toggleFullscreen])
 
   async function handleStart() {
-    if (!confirm(`Elindítod a játékot? (${gatherMinutes} perc gyűjtés + 5 perc rituálé)`)) return
+    const ok = await confirm({
+      title: 'Elindítod a játékot?',
+      message: `${gatherMinutes} perc gyűjtés, utána 5 perc a rituálé összeállítására.`,
+      confirmText: 'Indítás'
+    })
+    if (!ok) return
     const { error } = await supabase.rpc('start_game', { p_gather_minutes: gatherMinutes, p_ritual_minutes: 5 })
     setAdminMsg(error ? `Hiba: ${error.message}` : 'A játék elindult!')
     load()
   }
 
   async function handleReset() {
-    if (!confirm('BIZTOSAN törlöd az összes játékállást (feladatok, alapanyagok, rituálék)?')) return
+    const ok = await confirm({
+      title: 'Játékállás törlése',
+      message: 'Az összes próbálkozás, alapanyag és beküldött rituálé törlődik, és a játék leáll. A csapatok megmaradnak.',
+      confirmText: 'Igen, törlöm',
+      danger: true
+    })
+    if (!ok) return
     const { error } = await supabase.rpc('reset_game')
     if (!error) {
       setSubmissions([])

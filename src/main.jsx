@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App.jsx'
 import { missingEnv } from './lib/supabaseClient'
 import './index.css'
+import { ConfirmProvider } from './components/ConfirmProvider'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
@@ -14,7 +15,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       </div>
     ) : (
       <BrowserRouter basename={import.meta.env.BASE_URL}>
-        <App />
+        <ConfirmProvider>
+          <App />
+        </ConfirmProvider>
       </BrowserRouter>
     )}
   </React.StrictMode>

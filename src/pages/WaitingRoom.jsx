@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { imgUrl } from '../lib/images'
+import { useConfirm } from '../components/ConfirmProvider'
 
 // Várakozó szoba: amíg a stáb el nem indítja a csapatbeosztást, itt vár mindenki.
 // A profil időnként újratöltődik, és amint csapatot kap a játékos, az App
 // automatikusan átvált a Lobbyra.
 export default function WaitingRoom({ profile, refreshProfile }) {
+  const confirm = useConfirm()
   const navigate = useNavigate()
   const [room, setRoom] = useState({ count: 0, players: [] })
 
@@ -68,8 +70,13 @@ export default function WaitingRoom({ profile, refreshProfile }) {
           PIN módosítása
         </button>
         <button
-          onClick={() => {
-            if (window.confirm('Biztosan kijelentkezel?')) supabase.auth.signOut()
+          onClick={async () => {
+            const ok = await confirm({
+              title: 'Kijelentkezés',
+              message: 'Biztosan kijelentkezel?',
+              confirmText: 'Kijelentkezés'
+            })
+            if (ok) supabase.auth.signOut()
           }}
           className="underline"
         >
