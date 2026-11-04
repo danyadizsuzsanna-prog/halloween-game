@@ -230,6 +230,11 @@ export default function RitualStage({ submission, play = false, onPhase, skipSig
   const videoSrc = ritualVideoUrl(key)
   const videoRef = useRef(null)
   const videoFailedRef = useRef(false)
+  const phaseRef = useRef(phase)
+  phaseRef.current = phase
+  // Ha van videó, a végkifejlet CSAK a videó (a végén az utolsó képkocka marad).
+  // Videó nélkül / hibás videónál a régi animált végkifejlet jelenik meg.
+  const videoOnly = !!videoSrc && !videoFailedRef.current
 
   // Mely hozzávalók vannak a rituáléban? Ha a szerver nem adott részletet
   // (pl. a 0004 migráció még nincs lefuttatva), a teljes rituálé = mind a hat.
@@ -301,11 +306,25 @@ export default function RitualStage({ submission, play = false, onPhase, skipSig
   useEffect(() => {
     if (skipSignal !== skipSeen.current) {
       skipSeen.current = skipSignal
-      setPhase((p) => (p === 'video' ? 'reveal' : p))
+      if (phaseRef.current === 'video') {
+        // az utolsó képkockára ugrunk, és ott marad
+        const v = videoRef.current
+        try {
+          if (v && Number.isFinite(v.duration) && v.duration > 0) {
+            v.pause()
+            v.currentTime = Math.max(0, v.duration - 0.05)
+          }
+        } catch {
+          /* nem baj */
+        }
+        setPhase('reveal')
+      }
     }
   }, [skipSignal])
 
-  const revealed = phase === 'reveal'
+  const phaseReveal = phase === 'reveal'
+  const revealed = phaseReveal && !videoOnly // az animált végkifejlet (felirat, alakok) csak videó nélkül
+  const showVideo = phase === 'video' || (phaseReveal && videoOnly)
   const brew = revealed ? out.brew : '#4b3470'
   const power = Math.round(Number(submission.freshness_score ?? 0) * 100)
 
@@ -513,13 +532,13 @@ export default function RitualStage({ submission, play = false, onPhase, skipSig
       </div>
 
       {/* végkifejlet-videó: a 'ready' alatt elő van töltve (rejtve), a 'video' fázisban teljes képernyős */}
-      {videoSrc && !revealed && (
+      {videoSrc && (videoOnly || !phaseReveal) && (
         <div
           className="absolute inset-0"
           style={{
             zIndex: 30,
             background: '#000',
-            opacity: phase === 'video' ? 1 : 0,
+            opacity: showVideo ? 1 : 0,
             pointerEvents: 'none',
             transition: 'opacity .5s'
           }}
@@ -536,7 +555,7 @@ export default function RitualStage({ submission, play = false, onPhase, skipSig
             }}
             style={{ width: '100%', height: '100%', objectFit: 'contain' }}
           />
-          {phase === 'video' && (
+          {showVideo && (
             <p
               className="font-display text-ritual-bone text-center"
               style={{
