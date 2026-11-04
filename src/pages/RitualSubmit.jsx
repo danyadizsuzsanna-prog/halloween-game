@@ -62,6 +62,7 @@ export default function RitualSubmit({ profile }) {
   const [selected, setSelected] = useState({}) // ingredient_id -> inventory row id
   const [openQ, setOpenQ] = useState({}) // inventory row id -> lenyitott kérdés
   const [config, setConfig] = useState(null)
+  const [gate, setGate] = useState(null)
   const [submitted, setSubmitted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -73,6 +74,8 @@ export default function RitualSubmit({ profile }) {
       setRows(data ?? [])
       const { data: cfg } = await supabase.from('game_config').select('*').single()
       setConfig(cfg)
+      const { data: gt } = await supabase.rpc('get_ritual_gate')
+      setGate((gt ?? [])[0] ?? null)
       // alapértelmezésben az elsőként megszerzett példányt jelöljük ki
       const defaults = {}
       ;(data ?? []).forEach((r) => {
@@ -96,6 +99,11 @@ export default function RitualSubmit({ profile }) {
 
   const missingCount = 6 - Object.keys(grouped).length
   const deadline = config?.ritual_deadline ? new Date(config.ritual_deadline).getTime() : null
+  const gatherEnd = config?.ends_at ? new Date(config.ends_at).getTime() : null
+  // Beküldési kapu: mind a rendes állomás kész, vagy lejárt a gyűjtési idő
+  // (a szerver is ellenőrzi; a helyi óra másodpercenként élesíti a gombot)
+  const gatherOver = !!gate?.gather_over || (gatherEnd != null && Date.now() > gatherEnd)
+  const gateOpen = !gate || gate.can_submit || gatherOver
 
   async function handleSubmit() {
     const ok = await confirm({
@@ -193,6 +201,24 @@ export default function RitualSubmit({ profile }) {
           </span>
         </p>
       )}
+      {gate && !gateOpen && (
+        <div className="bg-ritual-purpleDark border border-ritual-orange rounded-xl p-3 mb-4 text-sm">
+          <p className="text-ritual-bone">
+            Még nem küldhetitek be: rendes állomások{' '}
+            <span className="font-semibold text-ritual-orange">
+              {gate.primary_done}/{gate.primary_total}
+            </span>
+            .
+          </p>
+          <p className="text-ritual-gray mt-1">
+            A beküldés akkor nyílik meg, ha mindet végigjártátok, vagy ha lejár a gyűjtési idő
+            {gatherEnd != null && Date.now() < gatherEnd && (
+              <> (még {formatClock(gatherEnd - Date.now())})</>
+            )}
+            .
+          </p>
+        </div>
+      )}
       {missingCount > 0 && (
         <p className="text-monster-vampire text-sm mb-4">
           {missingCount} alapanyag még hiányzik — beküldhető, de hiányos rituálé lesz belőle.
@@ -252,10 +278,10 @@ export default function RitualSubmit({ profile }) {
 
       <button
         onClick={handleSubmit}
-        disabled={submitting || rows.length === 0}
+        disabled={submitting || rows.length === 0 || !gateOpen}
         className="w-full rounded-xl px-4 py-4 bg-ritual-red text-ritual-bone font-semibold disabled:opacity-50"
       >
-        {submitting ? 'Küldés…' : 'Rituálé beküldése'}
+        {submitting ? 'Küldés…' : gateOpen ? 'Rituálé beküldése' : 'Még nem küldhető be'}
       </button>
       <button
         onClick={() => navigate('/lobby')}

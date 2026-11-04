@@ -99,7 +99,7 @@ export default function Presenter({ profile }) {
   const [skipSignal, setSkipSignal] = useState(0)
   const [view, setView] = useState('stage') // 'stage' | 'podium'
   const [adminOpen, setAdminOpen] = useState(false)
-  const [gatherMinutes, setGatherMinutes] = useState(40)
+  const [gatherMinutes, setGatherMinutes] = useState(70)
   const [adminMsg, setAdminMsg] = useState('')
 
   const isStaff = !!profile?.is_staff
@@ -331,6 +331,10 @@ export default function Presenter({ profile }) {
               {running ? 'A játék fut.' : 'A játék még nem indult el.'} Beküldött rituálé: {submissions.length}.
             </p>
 
+            <p className="text-ritual-gray text-xs mb-2">
+              Mind a 12 állomás kötelező. Javasolt gyűjtési idő: ~30 főig 65 perc · 31–42 fő 70 · 43–54 fő 75 ·
+              55–66 fő 80 · 67 fő fölött 85–90 perc.
+            </p>
             <div className="flex items-center gap-3 mb-3">
               <input
                 type="number"

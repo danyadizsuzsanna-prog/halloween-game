@@ -21,6 +21,7 @@ export default function Lobby({ profile, refreshProfile }) {
   const [config, setConfig] = useState(null)
   const [target, setTarget] = useState(null)
   const [options, setOptions] = useState([])
+  const [gate, setGate] = useState(null)
   const [claiming, setClaiming] = useState(false)
   const [choosing, setChoosing] = useState(false)
   const [error, setError] = useState('')
@@ -30,12 +31,14 @@ export default function Lobby({ profile, refreshProfile }) {
 
   const refresh = useCallback(async () => {
     if (!profile?.team_id) return
-    const [tm, tinfo, cfg, tgt] = await Promise.all([
+    const [tm, tinfo, cfg, tgt, gt] = await Promise.all([
       supabase.rpc('get_my_team_members'),
       supabase.from('teams').select('id, name, name_chosen').eq('id', profile.team_id).single(),
       supabase.from('game_config').select('*').single(),
-      supabase.rpc('get_current_target')
+      supabase.rpc('get_current_target'),
+      supabase.rpc('get_ritual_gate')
     ])
+    setGate((gt.data ?? [])[0] ?? null)
     setTeammates(tm.data ?? [])
     if (tinfo.data) setTeam(tinfo.data)
     setConfig(cfg.data ?? null)
@@ -216,6 +219,16 @@ export default function Lobby({ profile, refreshProfile }) {
         </div>
       )}
 
+      {started && gathering && gate && (
+        <p className="text-center text-ritual-gray text-sm mb-1">
+          Rendes állomások:{' '}
+          <span className="text-ritual-bone font-semibold">
+            {gate.primary_done}/{gate.primary_total}
+          </span>
+          {gate.primary_done < gate.primary_total && ' — a rituálé beküldéséhez mindet végig kell járnotok'}
+        </p>
+      )}
+
       {started && gathering && (
         <p className="text-center text-ritual-gray text-sm mb-4">
           Hátralévő gyűjtögető idő:{' '}
@@ -258,9 +271,9 @@ export default function Lobby({ profile, refreshProfile }) {
           <h2 className="font-display text-lg text-ritual-bone mb-3">Merre tovább?</h2>
           {options.length === 0 && (
             <p className="text-ritual-gray">
-              Most nincs ajánlható állomás. Ha mind a 6 alapanyagotok megvan, irány a rituálé
-              összeállítása! Ha még hiányzik valamelyik, az utolsó 10 percben nyílnak a tartalék
-              állomások, vagy várjatok, amíg egy másik csapat felszabadít egy helyszínt.
+              {gate && gate.primary_done >= gate.primary_total
+                ? 'Mind a rendes állomást végigjártátok — irány a rituálé összeállítása!'
+                : 'Most nincs ajánlható állomás. Várjatok egy kicsit, hamarosan újra lesz választási lehetőségetek.'}
             </p>
           )}
           {options.length > 0 && options.every((o) => o.is_busy) && (
@@ -283,7 +296,7 @@ export default function Lobby({ profile, refreshProfile }) {
                     <span>
                       {opt.ingredient_name}
                       {opt.is_backup && (
-                        <span className="ml-2 text-xs text-ritual-orange">(utolsó esély)</span>
+                        <span className="ml-2 text-xs text-ritual-orange">(tartalék állomás)</span>
                       )}
                     </span>
                   </span>
