@@ -147,6 +147,7 @@ export default function Task({ profile }) {
           <video
             src={mediaUrl(task.video_url)}
             controls
+            muted
             loop
             playsInline
             preload="auto"
